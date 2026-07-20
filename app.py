@@ -182,4 +182,5 @@ def upload_file():
 
 if __name__ == '__main__':
     # Port 5001: macOS AirPlay Receiver occupies port 5000
-    app.run(debug=True, port=5001)
+    # host 0.0.0.0: reachable from phones on the same Wi-Fi for camera testing
+    app.run(debug=True, host='0.0.0.0', port=5001)

@@ -111,6 +111,18 @@
             cursor: not-allowed;
             transform: none;
         }
+
+        .btn-secondary {
+            background: none;
+            border: none;
+            color: #667eea;
+            font-size: 0.95em;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            padding: 8px;
+            text-decoration: underline;
+        }
         
         .preview-area {
             margin-top: 30px;
@@ -269,10 +281,12 @@
         
         <div class="upload-area" id="uploadArea">
             <div class="upload-icon">📸</div>
-            <div class="upload-text">Click to upload or drag and drop</div>
-            <div class="upload-hint">PNG, JPG, JPEG, GIF, WEBP (max 16MB)</div>
-            <input type="file" id="fileInput" accept="image/*">
+            <div class="upload-text">Take a photo of your food</div>
+            <div class="upload-hint">or drag and drop an image here</div>
+            <input type="file" id="fileInput" accept="image/*" capture="environment">
+            <input type="file" id="libraryInput" accept="image/*">
         </div>
+        <button class="btn-secondary" id="libraryBtn">Choose an existing photo instead</button>
         
         <button class="btn" id="analyzeBtn" disabled>Analyze Image</button>
         
@@ -325,11 +339,20 @@
             }
         });
         
-        // File input change
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                handleFileSelect(e.target.files[0]);
-            }
+        // File input change (camera and library inputs share the same handler)
+        const libraryInput = document.getElementById('libraryInput');
+        const libraryBtn = document.getElementById('libraryBtn');
+
+        [fileInput, libraryInput].forEach(input => {
+            input.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
+        });
+
+        libraryBtn.addEventListener('click', () => {
+            libraryInput.click();
         });
         
         function handleFileSelect(file) {
@@ -357,8 +380,10 @@
                 error.style.display = 'none';
             };
             reader.readAsDataURL(file);
-            
+
             analyzeBtn.disabled = false;
+            // Camera-first flow: analyze immediately after a photo is selected
+            analyzeBtn.click();
         }
         
         // Analyze button
