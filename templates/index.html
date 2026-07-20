@@ -141,20 +141,84 @@
             padding: 15px;
             margin-bottom: 10px;
             border-radius: 8px;
+        }
+
+        .food-item-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
+            gap: 10px;
         }
-        
+
         .food-name {
             font-weight: 600;
             color: #333;
             font-size: 1.1em;
         }
-        
+
         .food-confidence {
             color: #667eea;
             font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .food-portion {
+            color: #888;
+            font-size: 0.9em;
+            margin-top: 4px;
+        }
+
+        .nutrition-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .nutrition-chip {
+            background: white;
+            border: 1px solid #e0e4ff;
+            border-radius: 15px;
+            padding: 4px 12px;
+            font-size: 0.85em;
+            color: #555;
+        }
+
+        .nutrition-chip strong {
+            color: #333;
+        }
+
+        .totals-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .totals-calories {
+            font-size: 2.2em;
+            font-weight: 700;
+        }
+
+        .totals-calories span {
+            font-size: 0.45em;
+            font-weight: 600;
+            opacity: 0.85;
+        }
+
+        .totals-macros {
+            display: flex;
+            justify-content: center;
+            gap: 25px;
+            margin-top: 10px;
+            font-size: 0.95em;
+        }
+
+        .totals-macros div strong {
+            display: block;
+            font-size: 1.2em;
         }
         
         .loading {
@@ -347,21 +411,26 @@
                 return;
             }
             
-            // Show which API was used
-            const apiSource = data.source === 'gemini' ? 'Gemini AI' : 'Vision API';
-            const apiColor = data.source === 'gemini' ? '#667eea' : '#999';
-            const apiIcon = data.source === 'gemini' ? '🤖' : '👁️';
-            
             let html = `
-                <div style="text-align: center; margin-bottom: 15px; padding: 10px; background: #f8f9ff; border-radius: 8px;">
-                    <span style="color: ${apiColor}; font-weight: 600;">${apiIcon} Using ${apiSource}</span>
-                    ${data.source === 'vision_api' ? '<div style="color: #999; font-size: 0.9em; margin-top: 5px;">For detailed descriptions, set GEMINI_API_KEY</div>' : ''}
-                </div>
                 <div class="results-title">Detected Items (${data.count})</div>
             `;
-            
-            // Show full description if available (from Gemini)
-            if (data.full_description && data.source === 'gemini') {
+
+            // Meal totals card (from Gemini nutrition estimates)
+            if (data.totals && data.totals.calories != null) {
+                html += `
+                    <div class="totals-card">
+                        <div class="totals-calories">${Math.round(data.totals.calories)} <span>kcal (est.)</span></div>
+                        <div class="totals-macros">
+                            <div><strong>${data.totals.protein_g ?? '–'}g</strong> protein</div>
+                            <div><strong>${data.totals.carbs_g ?? '–'}g</strong> carbs</div>
+                            <div><strong>${data.totals.fat_g ?? '–'}g</strong> fat</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Show full description if available
+            if (data.full_description) {
                 html += `
                     <div style="background: #f0f2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;">
                         <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📝 Detailed Analysis:</div>
@@ -369,16 +438,27 @@
                     </div>
                 `;
             }
-            
+
             data.items.forEach(item => {
+                const hasNutrition = item.calories != null;
                 html += `
                     <div class="food-item">
-                        <span class="food-name">${item.description}</span>
-                        ${item.confidence ? `<span class="food-confidence">${item.confidence}%</span>` : ''}
+                        <div class="food-item-header">
+                            <span class="food-name">${item.description}</span>
+                            ${item.confidence ? `<span class="food-confidence">${item.confidence}%</span>` : ''}
+                        </div>
+                        ${item.portion ? `<div class="food-portion">Portion: ${item.portion}</div>` : ''}
+                        ${hasNutrition ? `
+                        <div class="nutrition-row">
+                            <div class="nutrition-chip"><strong>${Math.round(item.calories)}</strong> kcal</div>
+                            ${item.protein_g != null ? `<div class="nutrition-chip"><strong>${item.protein_g}g</strong> protein</div>` : ''}
+                            ${item.carbs_g != null ? `<div class="nutrition-chip"><strong>${item.carbs_g}g</strong> carbs</div>` : ''}
+                            ${item.fat_g != null ? `<div class="nutrition-chip"><strong>${item.fat_g}g</strong> fat</div>` : ''}
+                        </div>` : ''}
                     </div>
                 `;
             });
-            
+
             results.innerHTML = html;
         }
         
