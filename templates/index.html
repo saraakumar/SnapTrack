@@ -2,157 +2,321 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SnapTrack - Food Detection</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>SnapTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --accent: #0e9f6e;
+            --accent-soft: #e6f6f0;
+            --ink: #1a2b23;
+            --ink-soft: #5c6f66;
+            --bg: #f6f8f7;
+            --card: #ffffff;
+            --line: #e4eae7;
+            --danger: #d94f3d;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
+        button, input {
+            font-family: inherit;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
             min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
+            padding: calc(env(safe-area-inset-top, 0px) + 24px) 16px
+                     calc(env(safe-area-inset-bottom, 0px) + 88px);
         }
-        
+
         .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 600px;
-            width: 100%;
-            padding: 40px;
+            max-width: 560px;
+            margin: 0 auto;
         }
-        
+
+        header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
         h1 {
-            color: #333;
-            text-align: center;
-            margin-bottom: 10px;
-            font-size: 2.5em;
+            font-size: 1.6em;
+            font-weight: 700;
+            letter-spacing: -0.02em;
         }
-        
+
+        h1 .dot {
+            color: var(--accent);
+        }
+
         .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
+            color: var(--ink-soft);
+            font-size: 0.95em;
+            margin-top: 4px;
         }
-        
+
+        .view {
+            display: none;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        /* ---------- Tab bar ---------- */
+        .tabbar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--card);
+            border-top: 1px solid var(--line);
+            display: flex;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            z-index: 10;
+        }
+
+        .tab {
+            flex: 1;
+            background: none;
+            border: none;
+            padding: 10px 0 8px;
+            min-height: 56px;
+            cursor: pointer;
+            color: var(--ink-soft);
+            font-size: 0.75em;
+            font-weight: 600;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .tab svg {
+            width: 24px;
+            height: 24px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.8;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .tab.active {
+            color: var(--accent);
+        }
+
+        /* ---------- Camera view ---------- */
         .upload-area {
-            border: 3px dashed #667eea;
-            border-radius: 15px;
-            padding: 40px;
+            background: var(--card);
+            border: 2px dashed var(--accent);
+            border-radius: 16px;
+            padding: 36px 20px;
             text-align: center;
             cursor: pointer;
-            transition: all 0.3s ease;
-            background: #f8f9ff;
-            margin-bottom: 20px;
+            transition: background 0.2s ease, transform 0.1s ease;
         }
-        
-        .upload-area:hover {
-            border-color: #764ba2;
-            background: #f0f2ff;
+
+        .upload-area:active {
+            transform: scale(0.99);
         }
-        
+
         .upload-area.dragover {
-            border-color: #764ba2;
-            background: #e8ebff;
-            transform: scale(1.02);
+            background: var(--accent-soft);
         }
-        
-        .upload-icon {
-            font-size: 3em;
-            margin-bottom: 15px;
-        }
-        
+
         .upload-text {
-            color: #667eea;
-            font-size: 1.2em;
+            color: var(--accent);
+            font-size: 1.1em;
             font-weight: 600;
-            margin-bottom: 10px;
         }
-        
+
         .upload-hint {
-            color: #999;
-            font-size: 0.9em;
+            color: var(--ink-soft);
+            font-size: 0.85em;
+            margin-top: 6px;
         }
-        
+
         input[type="file"] {
             display: none;
         }
-        
+
+        .btn-secondary {
+            display: block;
+            background: none;
+            border: none;
+            color: var(--ink-soft);
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            padding: 14px;
+            min-height: 44px;
+        }
+
+        .btn-secondary:hover {
+            color: var(--accent);
+        }
+
         .btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: none;
+            background: var(--accent);
             color: white;
             border: none;
-            padding: 12px 30px;
-            border-radius: 25px;
+            padding: 14px 30px;
+            border-radius: 12px;
             font-size: 1em;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s ease;
             width: 100%;
-            margin-top: 15px;
+            min-height: 48px;
+            margin-top: 12px;
         }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-        
+
         .btn:disabled {
             opacity: 0.6;
             cursor: not-allowed;
-            transform: none;
         }
 
-        .btn-secondary {
-            background: none;
+        .btn-log {
+            display: none;
+            background: var(--accent);
+            color: white;
             border: none;
-            color: #667eea;
-            font-size: 0.95em;
-            font-weight: 600;
+            padding: 16px 30px;
+            border-radius: 12px;
+            font-size: 1.05em;
+            font-weight: 700;
             cursor: pointer;
             width: 100%;
-            padding: 8px;
-            text-decoration: underline;
+            min-height: 52px;
+            margin: 4px 0 12px;
         }
-        
-        .preview-area {
-            margin-top: 30px;
+
+        .loading {
+            text-align: center;
+            color: var(--ink-soft);
+            font-size: 0.95em;
+            margin-top: 24px;
             display: none;
         }
-        
-        .preview-image {
-            width: 100%;
-            border-radius: 15px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+
+        .spinner {
+            border: 3px solid var(--line);
+            border-top: 3px solid var(--accent);
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 10px;
         }
-        
-        .results {
-            margin-top: 20px;
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
-        
-        .results-title {
-            font-size: 1.5em;
-            color: #333;
-            margin-bottom: 15px;
+
+        .error {
+            background: #fdefed;
+            border-left: 4px solid var(--danger);
+            color: var(--danger);
+            padding: 14px;
+            border-radius: 10px;
+            margin-top: 16px;
+            font-size: 0.95em;
+            display: none;
+        }
+
+        .preview-area {
+            margin-top: 24px;
+            display: none;
+        }
+
+        .totals-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            padding: 28px 20px 24px;
             text-align: center;
+            margin-bottom: 12px;
         }
-        
+
+        .totals-label {
+            color: var(--ink-soft);
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .totals-calories {
+            font-size: 3.6em;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+        }
+
+        .totals-calories span {
+            font-size: 0.32em;
+            font-weight: 600;
+            color: var(--ink-soft);
+            letter-spacing: 0;
+        }
+
+        .totals-macros {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .macro {
+            flex: 1;
+            max-width: 110px;
+            background: var(--accent-soft);
+            border-radius: 12px;
+            padding: 10px 6px;
+        }
+
+        .macro strong {
+            display: block;
+            font-size: 1.15em;
+            color: var(--accent);
+        }
+
+        .macro small {
+            color: var(--ink-soft);
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .summary-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            color: var(--ink-soft);
+            font-size: 0.92em;
+            line-height: 1.55;
+        }
+
         .food-item {
-            background: #f8f9ff;
-            border-left: 4px solid #667eea;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 8px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
         }
 
         .food-item-header {
@@ -164,214 +328,289 @@
 
         .food-name {
             font-weight: 600;
-            color: #333;
-            font-size: 1.1em;
+            font-size: 1em;
+            line-height: 1.4;
         }
 
         .food-confidence {
-            color: #667eea;
+            color: var(--ink-soft);
             font-weight: 600;
+            font-size: 0.85em;
             white-space: nowrap;
         }
 
         .food-portion {
-            color: #888;
-            font-size: 0.9em;
+            color: var(--ink-soft);
+            font-size: 0.85em;
             margin-top: 4px;
         }
 
         .nutrition-row {
             display: flex;
             gap: 8px;
-            margin-top: 10px;
+            margin-top: 12px;
             flex-wrap: wrap;
         }
 
         .nutrition-chip {
-            background: white;
-            border: 1px solid #e0e4ff;
-            border-radius: 15px;
-            padding: 4px 12px;
+            background: var(--bg);
+            border-radius: 20px;
+            padding: 6px 12px;
             font-size: 0.85em;
-            color: #555;
+            color: var(--ink-soft);
         }
 
         .nutrition-chip strong {
-            color: #333;
+            color: var(--ink);
         }
 
-        .totals-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
+        .preview-image {
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            margin-top: 4px;
+        }
+
+        .no-results {
             text-align: center;
+            color: var(--ink-soft);
+            padding: 20px;
+            font-style: italic;
         }
 
-        .totals-calories {
-            font-size: 2.2em;
+        /* ---------- Home view ---------- */
+        .day-header {
+            color: var(--ink-soft);
+            font-size: 0.8em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin: 24px 4px 10px;
+        }
+
+        .day-header .day-kcal {
+            float: right;
+            font-weight: 600;
+        }
+
+        .meal-row {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .meal-thumb {
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: var(--accent-soft);
+        }
+
+        .meal-thumb.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent);
             font-weight: 700;
         }
 
-        .totals-calories span {
-            font-size: 0.45em;
+        .meal-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .meal-name {
             font-weight: 600;
-            opacity: 0.85;
-        }
-
-        .totals-macros {
-            display: flex;
-            justify-content: center;
-            gap: 25px;
-            margin-top: 10px;
             font-size: 0.95em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .totals-macros div strong {
-            display: block;
+        .meal-meta {
+            color: var(--ink-soft);
+            font-size: 0.82em;
+            margin-top: 2px;
+        }
+
+        .meal-kcal {
+            font-weight: 700;
+            font-size: 1em;
+            white-space: nowrap;
+        }
+
+        .meal-kcal small {
+            color: var(--ink-soft);
+            font-weight: 600;
+        }
+
+        .meal-delete {
+            background: none;
+            border: none;
+            color: var(--line);
             font-size: 1.2em;
+            cursor: pointer;
+            padding: 8px;
+            line-height: 1;
         }
-        
-        .loading {
+
+        .meal-delete:hover {
+            color: var(--danger);
+        }
+
+        .empty-state {
             text-align: center;
-            color: #667eea;
-            font-size: 1.1em;
-            margin-top: 20px;
-            display: none;
+            color: var(--ink-soft);
+            padding: 48px 20px;
+            line-height: 1.6;
         }
-        
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .error {
-            background: #fee;
-            border-left: 4px solid #e74c3c;
-            color: #c0392b;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-            display: none;
-        }
-        
-        .no-results {
-            text-align: center;
-            color: #999;
-            padding: 20px;
-            font-style: italic;
+
+        .empty-state strong {
+            color: var(--ink);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🍔 SnapTrack</h1>
-        <p class="subtitle">Upload a photo to detect food items</p>
-        
-        <div class="upload-area" id="uploadArea">
-            <div class="upload-icon">📸</div>
-            <div class="upload-text">Take a photo of your food</div>
-            <div class="upload-hint">or drag and drop an image here</div>
-            <input type="file" id="fileInput" accept="image/*" capture="environment">
-            <input type="file" id="libraryInput" accept="image/*">
+        <header>
+            <h1>SnapTrack<span class="dot">.</span></h1>
+            <p class="subtitle" id="subtitle">Snap your food, know your macros</p>
+        </header>
+
+        <!-- ---------- Home view ---------- -->
+        <div class="view" id="homeView">
+            <div class="totals-card">
+                <div class="totals-label">Today</div>
+                <div class="totals-calories" id="todayCalories">0 <span>kcal</span></div>
+                <div class="totals-macros">
+                    <div class="macro"><strong id="todayProtein">0g</strong><small>protein</small></div>
+                    <div class="macro"><strong id="todayCarbs">0g</strong><small>carbs</small></div>
+                    <div class="macro"><strong id="todayFat">0g</strong><small>fat</small></div>
+                </div>
+            </div>
+            <div id="mealsList"></div>
         </div>
-        <button class="btn-secondary" id="libraryBtn">Choose an existing photo instead</button>
-        
-        <button class="btn" id="analyzeBtn" disabled>Analyze Image</button>
-        
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            Analyzing image...
-        </div>
-        
-        <div class="error" id="error"></div>
-        
-        <div class="preview-area" id="previewArea">
-            <img id="previewImage" class="preview-image" alt="Preview">
-            <div class="results" id="results"></div>
+
+        <!-- ---------- Camera view ---------- -->
+        <div class="view active" id="cameraView">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-text">Take a photo of your food</div>
+                <div class="upload-hint">or drag and drop an image here</div>
+                <input type="file" id="fileInput" accept="image/*" capture="environment">
+                <input type="file" id="libraryInput" accept="image/*">
+            </div>
+            <button class="btn-secondary" id="libraryBtn">Choose an existing photo instead</button>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                Analyzing your food...
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="preview-area" id="previewArea">
+                <button class="btn-log" id="logBtn">Add to log</button>
+                <div class="results" id="results"></div>
+                <img id="previewImage" class="preview-image" alt="Your food photo">
+            </div>
+
+            <button class="btn" id="analyzeBtn" disabled>Re-analyze</button>
         </div>
     </div>
-    
+
+    <nav class="tabbar">
+        <button class="tab" id="homeTab">
+            <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+            Home
+        </button>
+        <button class="tab active" id="cameraTab">
+            <svg viewBox="0 0 24 24"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
+            Camera
+        </button>
+    </nav>
+
     <script>
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
+        const libraryInput = document.getElementById('libraryInput');
+        const libraryBtn = document.getElementById('libraryBtn');
         const analyzeBtn = document.getElementById('analyzeBtn');
+        const logBtn = document.getElementById('logBtn');
         const previewArea = document.getElementById('previewArea');
         const previewImage = document.getElementById('previewImage');
         const results = document.getElementById('results');
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
-        
+        const homeView = document.getElementById('homeView');
+        const cameraView = document.getElementById('cameraView');
+        const homeTab = document.getElementById('homeTab');
+        const cameraTab = document.getElementById('cameraTab');
+        const subtitle = document.getElementById('subtitle');
+        const mealsList = document.getElementById('mealsList');
+
         let selectedFile = null;
-        
-        // Click to upload
-        uploadArea.addEventListener('click', () => {
-            fileInput.click();
-        });
-        
-        // Drag and drop
+        let lastAnalysis = null;
+
+        /* ---------- Tabs ---------- */
+        function switchView(name) {
+            const isHome = name === 'home';
+            homeView.classList.toggle('active', isHome);
+            cameraView.classList.toggle('active', !isHome);
+            homeTab.classList.toggle('active', isHome);
+            cameraTab.classList.toggle('active', !isHome);
+            subtitle.textContent = isHome ? 'Your meal log' : 'Snap your food, know your macros';
+            if (isHome) loadMeals();
+        }
+
+        homeTab.addEventListener('click', () => switchView('home'));
+        cameraTab.addEventListener('click', () => switchView('camera'));
+
+        /* ---------- Camera flow ---------- */
+        uploadArea.addEventListener('click', () => fileInput.click());
+
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.classList.add('dragover');
         });
-        
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-        
+
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                handleFileSelect(files[0]);
-            }
+            if (e.dataTransfer.files.length > 0) handleFileSelect(e.dataTransfer.files[0]);
         });
-        
-        // File input change (camera and library inputs share the same handler)
-        const libraryInput = document.getElementById('libraryInput');
-        const libraryBtn = document.getElementById('libraryBtn');
 
         [fileInput, libraryInput].forEach(input => {
             input.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    handleFileSelect(e.target.files[0]);
-                }
+                if (e.target.files.length > 0) handleFileSelect(e.target.files[0]);
             });
         });
 
-        libraryBtn.addEventListener('click', () => {
-            libraryInput.click();
-        });
-        
+        libraryBtn.addEventListener('click', () => libraryInput.click());
+
         function handleFileSelect(file) {
-            // Validate file type
             const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
             if (!validTypes.includes(file.type)) {
                 showError('Please select a valid image file (PNG, JPG, JPEG, GIF, WEBP)');
                 return;
             }
-            
-            // Validate file size (16MB)
             if (file.size > 16 * 1024 * 1024) {
                 showError('File size must be less than 16MB');
                 return;
             }
-            
+
             selectedFile = file;
-            
-            // Show preview
+            lastAnalysis = null;
+            logBtn.style.display = 'none';
+
             const reader = new FileReader();
             reader.onload = (e) => {
                 previewImage.src = e.target.result;
@@ -382,86 +621,214 @@
             reader.readAsDataURL(file);
 
             analyzeBtn.disabled = false;
-            // Camera-first flow: analyze immediately after a photo is selected
             analyzeBtn.click();
         }
-        
-        // Analyze button
+
         analyzeBtn.addEventListener('click', async () => {
-            console.log('[FRONTEND] Analyze button clicked');
-            if (!selectedFile) {
-                console.log('[FRONTEND] ERROR: No file selected');
-                return;
-            }
-            
-            console.log('[FRONTEND] File selected:', selectedFile.name);
+            if (!selectedFile) return;
+
             const formData = new FormData();
             formData.append('file', selectedFile);
-            
-            // Show loading
+
             loading.style.display = 'block';
             error.style.display = 'none';
             analyzeBtn.disabled = true;
+            analyzeBtn.style.display = 'none';
+            logBtn.style.display = 'none';
             results.innerHTML = '';
-            
+
+            // Never spin forever: abort if the server takes too long
+            const controller = new AbortController();
+            const timeoutTimer = setTimeout(() => controller.abort(), 70000);
+
             try {
-                console.log('[FRONTEND] Sending request to /upload...');
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                console.log('[FRONTEND] Response received:', response.status, response.statusText);
+                const response = await fetch('/upload', { method: 'POST', body: formData, signal: controller.signal });
                 const data = await response.json();
-                console.log('[FRONTEND] Response data:', data);
-                
-                if (!response.ok) {
-                    throw new Error(data.error || 'Failed to analyze image');
-                }
-                
+                if (!response.ok) throw new Error(data.error || 'Failed to analyze image');
+
+                lastAnalysis = data;
                 displayResults(data);
-                
+                if (data.items && data.items.length > 0) {
+                    logBtn.style.display = 'block';
+                    logBtn.textContent = 'Add to log';
+                    logBtn.disabled = false;
+                }
             } catch (err) {
-                console.error('[FRONTEND] Error:', err);
-                showError(err.message);
+                showError(err.name === 'AbortError'
+                    ? 'Analysis is taking too long. Check your connection and tap Re-analyze to try again.'
+                    : err.message);
             } finally {
+                clearTimeout(timeoutTimer);
                 loading.style.display = 'none';
                 analyzeBtn.disabled = false;
+                analyzeBtn.style.display = 'block';
             }
         });
-        
-        function displayResults(data) {
-            if (!data.items || data.items.length === 0) {
-                results.innerHTML = '<div class="no-results">No food items detected. Try a clearer image with visible food items.</div>';
+
+        /* ---------- Logging ---------- */
+        logBtn.addEventListener('click', async () => {
+            if (!lastAnalysis) return;
+            logBtn.disabled = true;
+            logBtn.textContent = 'Saving...';
+
+            try {
+                const response = await fetch('/api/meals', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        items: lastAnalysis.items,
+                        totals: lastAnalysis.totals,
+                        summary: lastAnalysis.full_description,
+                        thumbnail: makeThumbnail(previewImage)
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Failed to save meal');
+
+                // Reset camera view and show the log
+                previewArea.style.display = 'none';
+                results.innerHTML = '';
+                analyzeBtn.style.display = 'none';
+                selectedFile = null;
+                lastAnalysis = null;
+                switchView('home');
+            } catch (err) {
+                showError(err.message);
+                logBtn.disabled = false;
+                logBtn.textContent = 'Add to log';
+            }
+        });
+
+        function makeThumbnail(img, maxSize = 200) {
+            try {
+                const scale = maxSize / Math.max(img.naturalWidth, img.naturalHeight);
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.naturalWidth * Math.min(scale, 1));
+                canvas.height = Math.round(img.naturalHeight * Math.min(scale, 1));
+                canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                return canvas.toDataURL('image/jpeg', 0.7);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        /* ---------- Home / meal log ---------- */
+        async function loadMeals() {
+            try {
+                const response = await fetch('/api/meals');
+                const data = await response.json();
+                renderMeals(data.meals || []);
+            } catch (e) {
+                mealsList.innerHTML = '<div class="empty-state">Could not load your meal log.</div>';
+            }
+        }
+
+        function renderMeals(meals) {
+            const todayKey = dateKey(new Date());
+            const todayMeals = meals.filter(m => dateKey(new Date(m.created_at)) === todayKey);
+
+            setTodayTotals(todayMeals);
+
+            if (meals.length === 0) {
+                mealsList.innerHTML = `
+                    <div class="empty-state">
+                        <strong>No meals logged yet</strong><br>
+                        Snap a photo of your next meal and tap "Add to log".
+                    </div>`;
                 return;
             }
-            
-            let html = `
-                <div class="results-title">Detected Items (${data.count})</div>
-            `;
 
-            // Meal totals card (from Gemini nutrition estimates)
+            // Group by day, newest day first (meals arrive newest-first)
+            const groups = new Map();
+            meals.forEach(m => {
+                const key = dateKey(new Date(m.created_at));
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(m);
+            });
+
+            let html = '';
+            for (const [key, dayMeals] of groups) {
+                const dayKcal = dayMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+                html += `<div class="day-header">${dayLabel(key)}<span class="day-kcal">${Math.round(dayKcal)} kcal</span></div>`;
+                dayMeals.forEach(m => {
+                    const name = (m.items[0] && m.items[0].description) || m.summary || 'Meal';
+                    const time = new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                    const macros = [
+                        m.protein_g != null ? `${Math.round(m.protein_g)}p` : null,
+                        m.carbs_g != null ? `${Math.round(m.carbs_g)}c` : null,
+                        m.fat_g != null ? `${Math.round(m.fat_g)}f` : null,
+                    ].filter(Boolean).join(' · ');
+                    html += `
+                        <div class="meal-row">
+                            ${m.thumbnail
+                                ? `<img class="meal-thumb" src="${m.thumbnail}" alt="">`
+                                : `<div class="meal-thumb placeholder">${name.charAt(0).toUpperCase()}</div>`}
+                            <div class="meal-info">
+                                <div class="meal-name">${name}</div>
+                                <div class="meal-meta">${time}${macros ? ' · ' + macros : ''}</div>
+                            </div>
+                            <div class="meal-kcal">${m.calories != null ? Math.round(m.calories) : '–'} <small>kcal</small></div>
+                            <button class="meal-delete" data-id="${m.id}" aria-label="Delete meal">&times;</button>
+                        </div>`;
+                });
+            }
+            mealsList.innerHTML = html;
+
+            mealsList.querySelectorAll('.meal-delete').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    if (!confirm('Remove this meal from your log?')) return;
+                    await fetch(`/api/meals/${btn.dataset.id}`, { method: 'DELETE' });
+                    loadMeals();
+                });
+            });
+        }
+
+        function setTodayTotals(todayMeals) {
+            const sum = field => todayMeals.reduce((s, m) => s + (m[field] || 0), 0);
+            document.getElementById('todayCalories').innerHTML = `${Math.round(sum('calories'))} <span>kcal</span>`;
+            document.getElementById('todayProtein').textContent = `${Math.round(sum('protein_g'))}g`;
+            document.getElementById('todayCarbs').textContent = `${Math.round(sum('carbs_g'))}g`;
+            document.getElementById('todayFat').textContent = `${Math.round(sum('fat_g'))}g`;
+        }
+
+        function dateKey(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function dayLabel(key) {
+            const today = dateKey(new Date());
+            const yesterday = dateKey(new Date(Date.now() - 86400000));
+            if (key === today) return 'Today';
+            if (key === yesterday) return 'Yesterday';
+            const [y, m, d] = key.split('-').map(Number);
+            return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+        }
+
+        /* ---------- Results rendering ---------- */
+        function displayResults(data) {
+            if (!data.items || data.items.length === 0) {
+                results.innerHTML = `<div class="no-results">${data.full_description || 'No food items detected. Try a clearer photo.'}</div>`;
+                return;
+            }
+
+            let html = '';
+
             if (data.totals && data.totals.calories != null) {
                 html += `
                     <div class="totals-card">
-                        <div class="totals-calories">${Math.round(data.totals.calories)} <span>kcal (est.)</span></div>
+                        <div class="totals-label">This meal</div>
+                        <div class="totals-calories">${Math.round(data.totals.calories)} <span>kcal est.</span></div>
                         <div class="totals-macros">
-                            <div><strong>${data.totals.protein_g ?? '–'}g</strong> protein</div>
-                            <div><strong>${data.totals.carbs_g ?? '–'}g</strong> carbs</div>
-                            <div><strong>${data.totals.fat_g ?? '–'}g</strong> fat</div>
+                            <div class="macro"><strong>${data.totals.protein_g ?? '–'}g</strong><small>protein</small></div>
+                            <div class="macro"><strong>${data.totals.carbs_g ?? '–'}g</strong><small>carbs</small></div>
+                            <div class="macro"><strong>${data.totals.fat_g ?? '–'}g</strong><small>fat</small></div>
                         </div>
                     </div>
                 `;
             }
 
-            // Show full description if available
             if (data.full_description) {
-                html += `
-                    <div style="background: #f0f2ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;">
-                        <div style="font-weight: 600; color: #667eea; margin-bottom: 8px;">📝 Detailed Analysis:</div>
-                        <div style="color: #333; line-height: 1.6;">${data.full_description.replace(/\n/g, '<br>')}</div>
-                    </div>
-                `;
+                html += `<div class="summary-card">${data.full_description.replace(/\n/g, '<br>')}</div>`;
             }
 
             data.items.forEach(item => {
@@ -486,7 +853,7 @@
 
             results.innerHTML = html;
         }
-        
+
         function showError(message) {
             error.textContent = message;
             error.style.display = 'block';
@@ -494,4 +861,3 @@
     </script>
 </body>
 </html>
-

@@ -35,6 +35,9 @@ uploads/
 *.gif
 *.webp
 
+# Local database
+*.db
+
 # Environment variables
 .env
 *.json
