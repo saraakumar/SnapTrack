@@ -15,20 +15,35 @@ from PIL import Image
 
 load_dotenv()
 
+# Postgres in production (DATABASE_URL set, e.g. Neon), SQLite for local dev
+DATABASE_URL = os.environ.get('DATABASE_URL')
+IS_POSTGRES = bool(DATABASE_URL)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'snaptrack.db')
+
+if IS_POSTGRES:
+    import psycopg
+    from psycopg.rows import dict_row
 
 
 def get_db():
+    if IS_POSTGRES:
+        return psycopg.connect(DATABASE_URL, row_factory=dict_row)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 
+def q(sql):
+    """Translate '?' placeholders to Postgres '%s' when needed"""
+    return sql.replace('?', '%s') if IS_POSTGRES else sql
+
+
 def init_db():
     with get_db() as db:
-        db.execute('''
+        id_col = 'SERIAL PRIMARY KEY' if IS_POSTGRES else 'INTEGER PRIMARY KEY AUTOINCREMENT'
+        db.execute(f'''
             CREATE TABLE IF NOT EXISTS meals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id {id_col},
                 created_at TEXT NOT NULL,
                 summary TEXT,
                 items TEXT NOT NULL,
@@ -36,13 +51,15 @@ def init_db():
                 protein_g REAL,
                 carbs_g REAL,
                 fat_g REAL,
-                thumbnail TEXT
+                thumbnail TEXT,
+                meal_type TEXT
             )
         ''')
-        # Migration for databases created before meal_type existed
-        cols = [r[1] for r in db.execute('PRAGMA table_info(meals)').fetchall()]
-        if 'meal_type' not in cols:
-            db.execute('ALTER TABLE meals ADD COLUMN meal_type TEXT')
+        if not IS_POSTGRES:
+            # Migration for local SQLite databases created before meal_type existed
+            cols = [r[1] for r in db.execute('PRAGMA table_info(meals)').fetchall()]
+            if 'meal_type' not in cols:
+                db.execute('ALTER TABLE meals ADD COLUMN meal_type TEXT')
 
 
 init_db()
@@ -364,7 +381,7 @@ def coach():
     today = datetime.now().strftime('%Y-%m-%d')
     with get_db() as db:
         rows = db.execute(
-            'SELECT * FROM meals WHERE created_at LIKE ? ORDER BY created_at',
+            q('SELECT * FROM meals WHERE created_at LIKE ? ORDER BY created_at'),
             (today + '%',)).fetchall()
 
     if not rows:
@@ -425,15 +442,20 @@ def log_meal():
     if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
         meal_type = None
     created_at = datetime.now().isoformat(timespec='seconds')
+    sql = ('INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type) '
+           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    params = (created_at, data.get('summary', ''), json.dumps(items),
+              totals.get('calories'), totals.get('protein_g'),
+              totals.get('carbs_g'), totals.get('fat_g'),
+              data.get('thumbnail'), meal_type)
     with get_db() as db:
-        cur = db.execute(
-            'INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (created_at, data.get('summary', ''), json.dumps(items),
-             totals.get('calories'), totals.get('protein_g'),
-             totals.get('carbs_g'), totals.get('fat_g'),
-             data.get('thumbnail'), meal_type))
-    return jsonify({'success': True, 'id': cur.lastrowid, 'created_at': created_at})
+        if IS_POSTGRES:
+            cur = db.execute(q(sql + ' RETURNING id'), params)
+            meal_id = cur.fetchone()['id']
+        else:
+            cur = db.execute(sql, params)
+            meal_id = cur.lastrowid
+    return jsonify({'success': True, 'id': meal_id, 'created_at': created_at})
 
 
 @app.route('/api/meals', methods=['GET'])
@@ -452,7 +474,7 @@ def list_meals():
 @app.route('/api/meals/<int:meal_id>', methods=['DELETE'])
 def delete_meal(meal_id):
     with get_db() as db:
-        db.execute('DELETE FROM meals WHERE id = ?', (meal_id,))
+        db.execute(q('DELETE FROM meals WHERE id = ?'), (meal_id,))
     return jsonify({'success': True})
 
 
