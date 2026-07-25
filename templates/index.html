@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>SnapTrack</title>
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icon-180.png">
+    <meta name="theme-color" content="#0C3B2E">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SnapTrack">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -414,6 +421,45 @@
             padding: 4px 0 0;
         }
 
+        .edit-row {
+            display: none;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .edit-row.open {
+            display: flex;
+        }
+
+        .edit-row input {
+            flex: 1;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            font-size: 0.9em;
+            min-width: 0;
+        }
+
+        .edit-row .edit-go {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-weight: 700;
+            font-size: 0.9em;
+            cursor: pointer;
+        }
+
+        .meal-delete.arming {
+            color: #fff;
+            background: var(--danger);
+            border-radius: 8px;
+            font-size: 0.75em;
+            font-weight: 700;
+            padding: 6px 8px;
+        }
+
         .no-results {
             text-align: center;
             color: var(--ink-soft);
@@ -517,6 +563,88 @@
 
         .empty-state strong {
             color: var(--ink);
+        }
+
+        /* Goals */
+        .goals-gear {
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: none;
+            border: none;
+            color: #9dbfa6;
+            cursor: pointer;
+            padding: 6px;
+        }
+
+        .goals-gear svg {
+            width: 20px;
+            height: 20px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 1.6;
+        }
+
+        .goal-progress {
+            margin-top: 12px;
+        }
+
+        .goal-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.12);
+            overflow: hidden;
+        }
+
+        .goal-fill {
+            height: 100%;
+            border-radius: 4px;
+            background: var(--highlight);
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        .goal-fill.over {
+            background: #e8b34b;
+        }
+
+        .goal-caption {
+            color: #9dbfa6;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+
+        .goals-title {
+            font-size: 1.2em;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .goals-hint {
+            text-align: center;
+            color: var(--ink-soft);
+            font-size: 0.85em;
+            margin-bottom: 16px;
+        }
+
+        .goals-label {
+            display: block;
+            font-weight: 700;
+            font-size: 0.88em;
+            color: var(--ink);
+            margin-bottom: 14px;
+        }
+
+        .goals-label input {
+            display: block;
+            width: 100%;
+            margin-top: 6px;
+            padding: 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            font-size: 1em;
+            background: var(--card);
         }
 
         /* Coach card */
@@ -743,11 +871,18 @@
 
         <!-- ---------- Home view ---------- -->
         <div class="view" id="homeView">
-            <div class="totals-card">
+            <div class="totals-card" style="position: relative;">
+                <button class="goals-gear" id="goalsBtn" aria-label="Set goals">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
                 <div class="totals-label">Today</div>
                 <div class="totals-calories" id="todayCalories">0 <span>kcal</span></div>
+                <div class="goal-progress" id="goalProgress" style="display: none;">
+                    <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+                    <div class="goal-caption" id="goalCaption"></div>
+                </div>
                 <div class="totals-macros">
-                    <div class="macro"><strong id="todayProtein">0g</strong><small>protein</small></div>
+                    <div class="macro"><strong id="todayProtein">0g</strong><small id="proteinLabel">protein</small></div>
                     <div class="macro"><strong id="todayCarbs">0g</strong><small>carbs</small></div>
                     <div class="macro"><strong id="todayFat">0g</strong><small>fat</small></div>
                 </div>
@@ -766,6 +901,22 @@
         <!-- Meal detail modal -->
         <div class="modal-overlay" id="mealModal">
             <div class="modal" id="mealModalBody"></div>
+        </div>
+
+        <!-- Goals modal -->
+        <div class="modal-overlay" id="goalsModal">
+            <div class="modal">
+                <div class="modal-handle"></div>
+                <h2 class="goals-title">Daily goals</h2>
+                <p class="goals-hint">Leave a field empty to skip that goal.</p>
+                <label class="goals-label">Calories (kcal / day)
+                    <input type="number" inputmode="numeric" id="goalCaloriesInput" placeholder="e.g. 2000">
+                </label>
+                <label class="goals-label">Protein (g / day)
+                    <input type="number" inputmode="numeric" id="goalProteinInput" placeholder="e.g. 100">
+                </label>
+                <button class="btn-log" id="goalsSave" style="display: block;">Save goals</button>
+            </div>
         </div>
 
         <!-- ---------- Camera view ---------- -->
@@ -1037,8 +1188,8 @@
 
         async function loadMeals() {
             try {
-                const response = await fetch('/api/meals');
-                const data = await response.json();
+                const [mealsResponse] = await Promise.all([fetch('/api/meals'), loadGoals()]);
+                const data = await mealsResponse.json();
                 allMeals = data.meals || [];
                 renderHome();
             } catch (e) {
@@ -1206,12 +1357,28 @@
         }
 
         /* ---------- Meal detail modal ---------- */
+        // Two-tap delete: first tap arms ("Sure?"), second tap within 3s deletes
+        function armDelete(btn, onConfirm) {
+            if (btn.classList.contains('arming')) {
+                onConfirm();
+                return;
+            }
+            const original = btn.innerHTML;
+            btn.classList.add('arming');
+            btn.textContent = 'Sure?';
+            setTimeout(() => {
+                btn.classList.remove('arming');
+                btn.innerHTML = original;
+            }, 3000);
+        }
+
         mealsList.addEventListener('click', async (e) => {
             const deleteBtn = e.target.closest('.meal-delete');
             if (deleteBtn) {
-                if (!confirm('Remove this meal from your log?')) return;
-                await fetch(`/api/meals/${deleteBtn.dataset.id}`, { method: 'DELETE' });
-                loadMeals();
+                armDelete(deleteBtn, async () => {
+                    await fetch(`/api/meals/${deleteBtn.dataset.id}`, { method: 'DELETE' });
+                    loadMeals();
+                });
                 return;
             }
             const row = e.target.closest('.meal-row');
@@ -1240,7 +1407,11 @@
                     </div>`;
             }
 
-            html += `<div class="modal-meta">${dayLabel(dateKey(when))} · <span class="meal-type">${displayType(m)}</span> · ${time}</div>`;
+            html += `<div class="modal-meta">${dayLabel(dateKey(when))} · ${time}</div>`;
+            html += `<div class="type-picker visible" id="modalTypePicker">
+                ${['Breakfast','Lunch','Dinner','Snack'].map(t =>
+                    `<button data-type="${t}" class="${t === displayType(m) ? 'active' : ''}">${t}</button>`).join('')}
+            </div>`;
 
             if (m.thumbnail) html += `<img src="${m.thumbnail}" alt="Meal photo">`;
             if (m.summary) html += `<div class="summary-card">${m.summary.replace(/\n/g, '<br>')}</div>`;
@@ -1267,11 +1438,28 @@
             mealModalBody.innerHTML = html;
             mealModal.classList.add('open');
 
-            document.getElementById('modalDelete').addEventListener('click', async () => {
-                if (!confirm('Remove this meal from your log?')) return;
-                await fetch(`/api/meals/${id}`, { method: 'DELETE' });
-                mealModal.classList.remove('open');
-                loadMeals();
+            document.getElementById('modalDelete').addEventListener('click', (e) => {
+                armDelete(e.target, async () => {
+                    await fetch(`/api/meals/${id}`, { method: 'DELETE' });
+                    mealModal.classList.remove('open');
+                    loadMeals();
+                });
+            });
+
+            document.querySelectorAll('#modalTypePicker button').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    await fetch(`/api/meals/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ meal_type: btn.dataset.type })
+                    });
+                    m.meal_type = btn.dataset.type;
+                    document.querySelectorAll('#modalTypePicker button').forEach(b =>
+                        b.classList.toggle('active', b === btn));
+                    const heroLabel = mealModalBody.querySelector('.totals-label');
+                    if (heroLabel) heroLabel.textContent = btn.dataset.type;
+                    renderHome();
+                });
             });
         }
 
@@ -1279,13 +1467,73 @@
             if (e.target === mealModal) mealModal.classList.remove('open');
         });
 
+        let goals = { calorie_goal: null, protein_goal: null };
+
         function setTodayTotals(todayMeals) {
             const sum = field => todayMeals.reduce((s, m) => s + (m[field] || 0), 0);
-            document.getElementById('todayCalories').innerHTML = `${Math.round(sum('calories'))} <span>kcal</span>`;
-            document.getElementById('todayProtein').textContent = `${Math.round(sum('protein_g'))}g`;
+            const kcal = Math.round(sum('calories'));
+            const protein = Math.round(sum('protein_g'));
+            document.getElementById('todayCalories').innerHTML = `${kcal} <span>kcal</span>`;
+            document.getElementById('todayProtein').textContent = `${protein}g`;
             document.getElementById('todayCarbs').textContent = `${Math.round(sum('carbs_g'))}g`;
             document.getElementById('todayFat').textContent = `${Math.round(sum('fat_g'))}g`;
+
+            const progress = document.getElementById('goalProgress');
+            if (goals.calorie_goal) {
+                const pct = Math.min(100, (kcal / goals.calorie_goal) * 100);
+                const fill = document.getElementById('goalFill');
+                fill.style.width = pct + '%';
+                fill.classList.toggle('over', kcal > goals.calorie_goal);
+                const remaining = Math.round(goals.calorie_goal - kcal);
+                document.getElementById('goalCaption').textContent = remaining >= 0
+                    ? `${remaining} kcal left of ${Math.round(goals.calorie_goal)}`
+                    : `${-remaining} kcal over your ${Math.round(goals.calorie_goal)} goal`;
+                progress.style.display = 'block';
+            } else {
+                progress.style.display = 'none';
+            }
+
+            document.getElementById('proteinLabel').textContent = goals.protein_goal
+                ? `protein / ${Math.round(goals.protein_goal)}g`
+                : 'protein';
         }
+
+        /* ---------- Goals ---------- */
+        const goalsModal = document.getElementById('goalsModal');
+        const goalCaloriesInput = document.getElementById('goalCaloriesInput');
+        const goalProteinInput = document.getElementById('goalProteinInput');
+
+        async function loadGoals() {
+            try {
+                const response = await fetch('/api/goals');
+                goals = await response.json();
+            } catch (e) { /* keep defaults */ }
+        }
+
+        document.getElementById('goalsBtn').addEventListener('click', () => {
+            goalCaloriesInput.value = goals.calorie_goal ? Math.round(goals.calorie_goal) : '';
+            goalProteinInput.value = goals.protein_goal ? Math.round(goals.protein_goal) : '';
+            goalsModal.classList.add('open');
+        });
+
+        goalsModal.addEventListener('click', (e) => {
+            if (e.target === goalsModal) goalsModal.classList.remove('open');
+        });
+
+        document.getElementById('goalsSave').addEventListener('click', async () => {
+            const response = await fetch('/api/goals', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    calorie_goal: goalCaloriesInput.value || null,
+                    protein_goal: goalProteinInput.value || null
+                })
+            });
+            goals = await response.json();
+            goalsModal.classList.remove('open');
+            renderHome();
+            loadCoach();
+        });
 
         function dateKey(d) {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1345,6 +1593,10 @@
                             ${item.fat_g != null ? `<div class="nutrition-chip"><strong>${item.fat_g}g</strong> fat</div>` : ''}
                         </div>` : ''}
                         <button class="food-edit" data-index="${index}">Not right? Edit</button>
+                        <div class="edit-row" data-index="${index}">
+                            <input type="text" placeholder="What is this food actually?" value="${item.description.replace(/"/g, '&quot;')}">
+                            <button class="edit-go" data-index="${index}">Update</button>
+                        </div>
                     </div>
                 `;
             });
@@ -1353,10 +1605,19 @@
 
             results.querySelectorAll('.food-edit').forEach(btn => {
                 btn.addEventListener('click', () => {
+                    const row = results.querySelector(`.edit-row[data-index="${btn.dataset.index}"]`);
+                    const isOpen = row.classList.toggle('open');
+                    if (isOpen) row.querySelector('input').focus();
+                });
+            });
+
+            results.querySelectorAll('.edit-go').forEach(btn => {
+                btn.addEventListener('click', () => {
                     const item = data.items[btn.dataset.index];
-                    const corrected = prompt('What is this food actually?', item.description);
-                    if (corrected && corrected.trim() && corrected.trim() !== item.description) {
-                        runAnalysis(`The item "${item.description}" is actually: ${corrected.trim()}`);
+                    const row = results.querySelector(`.edit-row[data-index="${btn.dataset.index}"]`);
+                    const corrected = row.querySelector('input').value.trim();
+                    if (corrected && corrected !== item.description) {
+                        runAnalysis(`The item "${item.description}" is actually: ${corrected}`);
                     }
                 });
             });

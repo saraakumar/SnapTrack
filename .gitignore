@@ -42,6 +42,8 @@ uploads/
 .env
 *.json
 !package.json
+!static/manifest.json
+!static/*.png
 
 # IDE
 .vscode/

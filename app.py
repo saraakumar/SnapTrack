@@ -55,6 +55,12 @@ def init_db():
                 meal_type TEXT
             )
         ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        ''')
         if not IS_POSTGRES:
             # Migration for local SQLite databases created before meal_type existed
             cols = [r[1] for r in db.execute('PRAGMA table_info(meals)').fetchall()]
@@ -372,6 +378,18 @@ def _generate_text(prompt):
 _coach_cache = {'key': None, 'text': None}
 
 
+def _goals_line():
+    goals = _get_goals()
+    parts = []
+    if goals['calorie_goal']:
+        parts.append(f"{round(goals['calorie_goal'])} kcal")
+    if goals['protein_goal']:
+        parts.append(f"{round(goals['protein_goal'])}g protein")
+    if not parts:
+        return ''
+    return f"The user's daily targets: {', '.join(parts)}. Frame advice against these targets.\n"
+
+
 @app.route('/api/coach')
 def coach():
     """One-sentence coaching insight about today's eating so far"""
@@ -387,7 +405,7 @@ def coach():
     if not rows:
         return jsonify({'message': None})
 
-    cache_key = (today, len(rows), rows[-1]['id'])
+    cache_key = (today, len(rows), rows[-1]['id'], str(_get_goals()))
     if _coach_cache['key'] == cache_key:
         return jsonify({'message': _coach_cache['text']})
 
@@ -414,7 +432,7 @@ The current time is {datetime.now().strftime('%H:%M')}. Here is what the user ha
 {chr(10).join(meal_lines)}
 
 Today's totals so far: {totals['kcal']} kcal, {totals['protein']}g protein, {totals['carbs']}g carbs, {totals['fat']}g fat.
-
+{_goals_line()}
 Write ONE or TWO short sentences (max 40 words total) of genuinely useful, specific observation or advice.
 Reference their actual food or numbers. Consider what meals are still likely ahead today given the time.
 Be warm but direct. No greetings, no emoji, no generic platitudes like "keep it up", no lecturing about health."""
@@ -476,6 +494,49 @@ def delete_meal(meal_id):
     with get_db() as db:
         db.execute(q('DELETE FROM meals WHERE id = ?'), (meal_id,))
     return jsonify({'success': True})
+
+
+@app.route('/api/meals/<int:meal_id>', methods=['PATCH'])
+def update_meal(meal_id):
+    """Update a logged meal (currently: its type)"""
+    data = request.get_json(silent=True) or {}
+    meal_type = data.get('meal_type')
+    if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
+        return jsonify({'error': 'Invalid meal_type'}), 400
+    with get_db() as db:
+        db.execute(q('UPDATE meals SET meal_type = ? WHERE id = ?'), (meal_type, meal_id))
+    return jsonify({'success': True})
+
+
+def _get_goals():
+    with get_db() as db:
+        rows = db.execute(q("SELECT key, value FROM settings WHERE key IN (?, ?)"),
+                          ('calorie_goal', 'protein_goal')).fetchall()
+    goals = {row['key']: row['value'] for row in rows}
+    return {
+        'calorie_goal': _to_number(goals.get('calorie_goal')),
+        'protein_goal': _to_number(goals.get('protein_goal')),
+    }
+
+
+@app.route('/api/goals', methods=['GET'])
+def get_goals():
+    return jsonify(_get_goals())
+
+
+@app.route('/api/goals', methods=['POST'])
+def set_goals():
+    data = request.get_json(silent=True) or {}
+    upsert = ('INSERT INTO settings (key, value) VALUES (?, ?) '
+              'ON CONFLICT (key) DO UPDATE SET value = excluded.value')
+    with get_db() as db:
+        for key in ('calorie_goal', 'protein_goal'):
+            value = _to_number(data.get(key))
+            if value and value > 0:
+                db.execute(q(upsert), (key, str(value)))
+            else:
+                db.execute(q('DELETE FROM settings WHERE key = ?'), (key,))
+    return jsonify({'success': True, **_get_goals()})
 
 
 if __name__ == '__main__':
