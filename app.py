@@ -37,6 +37,10 @@ def init_db():
                 thumbnail TEXT
             )
         ''')
+        # Migration for databases created before meal_type existed
+        cols = [r[1] for r in db.execute('PRAGMA table_info(meals)').fetchall()]
+        if 'meal_type' not in cols:
+            db.execute('ALTER TABLE meals ADD COLUMN meal_type TEXT')
 
 
 init_db()
@@ -126,8 +130,8 @@ def _is_rate_limit(error):
     return '429' in text or 'RESOURCE_EXHAUSTED' in text
 
 
-def analyze_food(image):
-    """Send the image to Gemini and return detected items with nutrition estimates"""
+def _run_model(image, prompt):
+    """Run one Gemini analysis pass and return the parsed result dict"""
     response = None
     last_error = None
     for model_name in MODEL_CANDIDATES:
@@ -137,7 +141,7 @@ def analyze_food(image):
         try:
             response = client.models.generate_content(
                 model=model_name,
-                contents=[ANALYSIS_PROMPT, image],
+                contents=[prompt, image],
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json',
                     response_schema=RESPONSE_SCHEMA,
@@ -185,6 +189,40 @@ def analyze_food(image):
     }
 
 
+def _min_confidence(result):
+    scores = [i['confidence'] for i in result['items'] if i.get('confidence') is not None]
+    return min(scores) if scores else 0
+
+
+def analyze_food(image, correction=None):
+    """Analyze a meal photo; optionally honor a user correction of the identification.
+
+    If the model reports low confidence (<90) on any item, re-run once and
+    keep whichever pass it was more confident about.
+    """
+    prompt = ANALYSIS_PROMPT
+    if correction:
+        prompt += (
+            "\n\nUSER CORRECTION - HIGHEST PRIORITY: The user has identified the food "
+            f"themselves: \"{correction}\". Trust the user's identification over your own "
+            "visual interpretation. Use the image only to estimate portion size and any "
+            "details the user did not specify, and estimate nutrition for what the user says it is."
+        )
+
+    result = _run_model(image, prompt)
+
+    if not correction and result['items'] and _min_confidence(result) < 90:
+        app.logger.info("Low confidence result, re-running analysis once")
+        try:
+            second = _run_model(image, prompt)
+            if _min_confidence(second) > _min_confidence(result):
+                result = second
+        except Exception as e:
+            app.logger.warning(f"Confidence retry failed, keeping first result: {e}")
+
+    return result
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -221,8 +259,10 @@ def upload_file():
     except Exception:
         return jsonify({'error': 'Could not read that file as an image. Please try another photo.'}), 400
 
+    correction = (request.form.get('correction') or '').strip() or None
+
     try:
-        result = analyze_food(image)
+        result = analyze_food(image, correction=correction)
         return jsonify({
             'success': True,
             'items': result['items'],
@@ -236,6 +276,83 @@ def upload_file():
         return jsonify({'error': f'Image analysis failed: {e}'}), 502
 
 
+def _generate_text(prompt):
+    """Plain-text Gemini call with the same model fallback/cooldown as image analysis"""
+    last_error = None
+    for model_name in MODEL_CANDIDATES:
+        if _model_cooldown_until.get(model_name, 0) > time.time():
+            continue
+        try:
+            response = client.models.generate_content(model=model_name, contents=prompt)
+            return response.text.strip()
+        except Exception as e:
+            app.logger.warning(f"{model_name} failed: {e}")
+            last_error = e
+            if _is_rate_limit(e):
+                _model_cooldown_until[model_name] = time.time() + RATE_LIMIT_COOLDOWN_SECONDS
+    raise last_error or RuntimeError('No model available')
+
+
+_coach_cache = {'key': None, 'text': None}
+
+
+@app.route('/api/coach')
+def coach():
+    """One-sentence coaching insight about today's eating so far"""
+    if client is None:
+        return jsonify({'message': None})
+
+    today = datetime.now().strftime('%Y-%m-%d')
+    with get_db() as db:
+        rows = db.execute(
+            'SELECT * FROM meals WHERE created_at LIKE ? ORDER BY created_at',
+            (today + '%',)).fetchall()
+
+    if not rows:
+        return jsonify({'message': None})
+
+    cache_key = (today, len(rows), rows[-1]['id'])
+    if _coach_cache['key'] == cache_key:
+        return jsonify({'message': _coach_cache['text']})
+
+    meal_lines = []
+    for row in rows:
+        items = json.loads(row['items'])
+        name = items[0]['description'] if items else (row['summary'] or 'meal')
+        when = row['created_at'][11:16]
+        meal_lines.append(
+            f"- {row['meal_type'] or 'Meal'} at {when}: {name} "
+            f"({round(row['calories'] or 0)} kcal, {round(row['protein_g'] or 0)}g protein, "
+            f"{round(row['carbs_g'] or 0)}g carbs, {round(row['fat_g'] or 0)}g fat)")
+
+    totals = {
+        'kcal': round(sum(r['calories'] or 0 for r in rows)),
+        'protein': round(sum(r['protein_g'] or 0 for r in rows)),
+        'carbs': round(sum(r['carbs_g'] or 0 for r in rows)),
+        'fat': round(sum(r['fat_g'] or 0 for r in rows)),
+    }
+
+    prompt = f"""You are a friendly, no-nonsense nutrition coach inside a food tracking app.
+The current time is {datetime.now().strftime('%H:%M')}. Here is what the user has eaten today:
+
+{chr(10).join(meal_lines)}
+
+Today's totals so far: {totals['kcal']} kcal, {totals['protein']}g protein, {totals['carbs']}g carbs, {totals['fat']}g fat.
+
+Write ONE or TWO short sentences (max 40 words total) of genuinely useful, specific observation or advice.
+Reference their actual food or numbers. Consider what meals are still likely ahead today given the time.
+Be warm but direct. No greetings, no emoji, no generic platitudes like "keep it up", no lecturing about health."""
+
+    try:
+        message = _generate_text(prompt)
+        _coach_cache['key'] = cache_key
+        _coach_cache['text'] = message
+        return jsonify({'message': message})
+    except Exception as e:
+        app.logger.warning(f"Coach generation failed: {e}")
+        return jsonify({'message': None})
+
+
 @app.route('/api/meals', methods=['POST'])
 def log_meal():
     """Save an analyzed meal to the log"""
@@ -245,15 +362,18 @@ def log_meal():
         return jsonify({'error': 'Nothing to log'}), 400
 
     totals = data.get('totals') or {}
+    meal_type = data.get('meal_type')
+    if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
+        meal_type = None
     created_at = datetime.now().isoformat(timespec='seconds')
     with get_db() as db:
         cur = db.execute(
-            'INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (created_at, data.get('summary', ''), json.dumps(items),
              totals.get('calories'), totals.get('protein_g'),
              totals.get('carbs_g'), totals.get('fat_g'),
-             data.get('thumbnail')))
+             data.get('thumbnail'), meal_type))
     return jsonify({'success': True, 'id': cur.lastrowid, 'created_at': created_at})
 
 

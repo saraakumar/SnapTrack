@@ -9,13 +9,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
-            --accent: #0e9f6e;
-            --accent-soft: #e6f6f0;
-            --ink: #1a2b23;
-            --ink-soft: #5c6f66;
-            --bg: #f6f8f7;
+            --accent: #6D9773;       /* sage - buttons, actions */
+            --accent-soft: #e8f0e8;  /* sage tint */
+            --deep: #0C3B2E;         /* forest - hero cards, emphasis */
+            --amber: #B46617;        /* earthy accent */
+            --highlight: #a8d5b0;    /* light green - highlight numbers on dark */
+            --ink: #16302a;
+            --ink-soft: #5f7268;
+            --bg: #edf5ec;           /* pale mint */
             --card: #ffffff;
-            --line: #e4eae7;
+            --line: #dde8dd;
             --danger: #d94f3d;
         }
 
@@ -112,7 +115,7 @@
         }
 
         .tab.active {
-            color: var(--accent);
+            color: var(--deep);
         }
 
         /* ---------- Camera view ---------- */
@@ -187,6 +190,35 @@
             cursor: not-allowed;
         }
 
+        .type-picker {
+            display: none;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .type-picker.visible {
+            display: flex;
+        }
+
+        .type-picker button {
+            flex: 1;
+            padding: 10px 4px;
+            min-height: 44px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--card);
+            color: var(--ink-soft);
+            font-weight: 700;
+            font-size: 0.82em;
+            cursor: pointer;
+        }
+
+        .type-picker button.active {
+            background: var(--deep);
+            border-color: var(--deep);
+            color: #ffffff;
+        }
+
         .btn-log {
             display: none;
             background: var(--accent);
@@ -241,18 +273,18 @@
         }
 
         .totals-card {
-            background: var(--card);
-            border: 1px solid var(--line);
+            background: var(--deep);
             border-radius: 20px;
             padding: 28px 20px 24px;
             text-align: center;
             margin-bottom: 12px;
+            color: #ffffff;
         }
 
         .totals-label {
-            color: var(--ink-soft);
+            color: #9dbfa6;
             font-size: 0.8em;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.08em;
         }
@@ -262,12 +294,13 @@
             font-weight: 800;
             letter-spacing: -0.03em;
             line-height: 1.1;
+            color: #ffffff;
         }
 
         .totals-calories span {
             font-size: 0.32em;
             font-weight: 600;
-            color: var(--ink-soft);
+            color: #9dbfa6;
             letter-spacing: 0;
         }
 
@@ -281,7 +314,7 @@
         .macro {
             flex: 1;
             max-width: 110px;
-            background: var(--accent-soft);
+            background: rgba(255, 255, 255, 0.08);
             border-radius: 12px;
             padding: 10px 6px;
         }
@@ -289,13 +322,13 @@
         .macro strong {
             display: block;
             font-size: 1.15em;
-            color: var(--accent);
+            color: var(--highlight);
         }
 
         .macro small {
-            color: var(--ink-soft);
+            color: #9dbfa6;
             font-size: 0.75em;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
@@ -368,7 +401,17 @@
             width: 100%;
             border-radius: 16px;
             border: 1px solid var(--line);
-            margin-top: 4px;
+            margin-bottom: 12px;
+        }
+
+        .food-edit {
+            background: none;
+            border: none;
+            color: var(--amber);
+            font-size: 0.85em;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 4px 0 0;
         }
 
         .no-results {
@@ -475,6 +518,220 @@
         .empty-state strong {
             color: var(--ink);
         }
+
+        /* Coach card */
+        .coach-card {
+            background: var(--accent-soft);
+            border-left: 4px solid var(--accent);
+            border-radius: 14px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+            font-size: 0.95em;
+            line-height: 1.5;
+            color: var(--ink);
+        }
+
+        .coach-label {
+            color: var(--accent);
+            font-size: 0.72em;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 4px;
+        }
+
+        /* List / Calendar toggle */
+        .seg {
+            display: flex;
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        .seg button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: none;
+            font-weight: 700;
+            font-size: 0.9em;
+            color: var(--ink-soft);
+            cursor: pointer;
+            min-height: 44px;
+        }
+
+        .seg button.active {
+            background: var(--deep);
+            color: #ffffff;
+        }
+
+        /* Calendar */
+        .cal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 4px 4px 10px;
+            font-weight: 700;
+        }
+
+        .cal-nav {
+            background: none;
+            border: none;
+            font-size: 1.3em;
+            color: var(--accent);
+            cursor: pointer;
+            padding: 6px 16px;
+        }
+
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .cal-dow {
+            text-align: center;
+            font-size: 0.7em;
+            color: var(--ink-soft);
+            font-weight: 700;
+            padding: 4px 0;
+        }
+
+        .cal-day {
+            aspect-ratio: 1;
+            border-radius: 10px;
+            background: var(--card);
+            border: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 600;
+            color: var(--ink);
+        }
+
+        .cal-day.blank {
+            background: none;
+            border: none;
+            cursor: default;
+        }
+
+        .cal-day .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--accent);
+            margin-top: 3px;
+        }
+
+        .cal-day.has-photo {
+            background-size: cover;
+            background-position: center;
+            border: none;
+            justify-content: flex-start;
+            align-items: flex-start;
+            padding: 3px;
+        }
+
+        .cal-day.has-photo .num {
+            background: rgba(12, 59, 46, 0.72);
+            color: #ffffff;
+            border-radius: 7px;
+            padding: 0 5px;
+            font-size: 0.8em;
+            line-height: 1.5;
+        }
+
+        .cal-day.selected {
+            background-color: var(--deep);
+            border-color: var(--deep);
+            color: #ffffff;
+        }
+
+        .cal-day.selected .dot {
+            background: #ffffff;
+        }
+
+        .cal-day.selected,
+        .cal-day.today {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+        }
+
+        .cal-day.today {
+            border-color: var(--accent);
+        }
+
+        /* Meal detail modal */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(12, 59, 46, 0.5);
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+            z-index: 20;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg);
+            border-radius: 20px 20px 0 0;
+            max-width: 560px;
+            width: 100%;
+            max-height: 88vh;
+            overflow-y: auto;
+            padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 20px);
+        }
+
+        .modal-handle {
+            width: 40px;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--line);
+            margin: 0 auto 14px;
+        }
+
+        .modal img {
+            width: 100%;
+            border-radius: 16px;
+            margin-bottom: 12px;
+        }
+
+        .modal-meta {
+            text-align: center;
+            color: var(--ink-soft);
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .modal-meta .meal-type {
+            color: var(--accent);
+        }
+
+        .btn-danger {
+            display: block;
+            width: 100%;
+            background: none;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 0.95em;
+            cursor: pointer;
+            min-height: 48px;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -495,7 +752,20 @@
                     <div class="macro"><strong id="todayFat">0g</strong><small>fat</small></div>
                 </div>
             </div>
+            <div class="coach-card" id="coachCard" style="display: none;">
+                <div class="coach-label">Coach</div>
+                <div id="coachMessage"></div>
+            </div>
+            <div class="seg" id="homeSeg">
+                <button data-mode="list" class="active">List</button>
+                <button data-mode="calendar">Calendar</button>
+            </div>
             <div id="mealsList"></div>
+        </div>
+
+        <!-- Meal detail modal -->
+        <div class="modal-overlay" id="mealModal">
+            <div class="modal" id="mealModalBody"></div>
         </div>
 
         <!-- ---------- Camera view ---------- -->
@@ -503,9 +773,9 @@
             <div class="upload-area" id="uploadArea">
                 <div class="upload-text">Take a photo of your food</div>
                 <div class="upload-hint">or drag and drop an image here</div>
-                <input type="file" id="fileInput" accept="image/*" capture="environment">
-                <input type="file" id="libraryInput" accept="image/*">
             </div>
+            <input type="file" id="fileInput" accept="image/*" capture="environment">
+            <input type="file" id="libraryInput" accept="image/*">
             <button class="btn-secondary" id="libraryBtn">Choose an existing photo instead</button>
 
             <div class="loading" id="loading">
@@ -516,9 +786,16 @@
             <div class="error" id="error"></div>
 
             <div class="preview-area" id="previewArea">
+                <div class="type-picker" id="typePicker">
+                    <button data-type="Breakfast">Breakfast</button>
+                    <button data-type="Lunch">Lunch</button>
+                    <button data-type="Dinner">Dinner</button>
+                    <button data-type="Snack">Snack</button>
+                </div>
                 <button class="btn-log" id="logBtn">Add to log</button>
-                <div class="results" id="results"></div>
+                <div id="resultsTotals"></div>
                 <img id="previewImage" class="preview-image" alt="Your food photo">
+                <div class="results" id="results"></div>
             </div>
 
             <button class="btn" id="analyzeBtn" disabled>Re-analyze</button>
@@ -546,6 +823,7 @@
         const previewArea = document.getElementById('previewArea');
         const previewImage = document.getElementById('previewImage');
         const results = document.getElementById('results');
+        const resultsTotals = document.getElementById('resultsTotals');
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
         const homeView = document.getElementById('homeView');
@@ -566,11 +844,15 @@
             homeTab.classList.toggle('active', isHome);
             cameraTab.classList.toggle('active', !isHome);
             subtitle.textContent = isHome ? 'Your meal log' : 'Snap your food, know your macros';
+            localStorage.setItem('snaptrack-view', name);
             if (isHome) loadMeals();
         }
 
         homeTab.addEventListener('click', () => switchView('home'));
         cameraTab.addEventListener('click', () => switchView('camera'));
+
+        // Restore whichever screen was open before the refresh
+        switchView(localStorage.getItem('snaptrack-view') || 'camera');
 
         /* ---------- Camera flow ---------- */
         uploadArea.addEventListener('click', () => fileInput.click());
@@ -610,25 +892,30 @@
             selectedFile = file;
             lastAnalysis = null;
             logBtn.style.display = 'none';
+            typePicker.classList.remove('visible');
 
             const reader = new FileReader();
             reader.onload = (e) => {
                 previewImage.src = e.target.result;
                 previewArea.style.display = 'block';
                 results.innerHTML = '';
+                resultsTotals.innerHTML = '';
                 error.style.display = 'none';
             };
             reader.readAsDataURL(file);
 
             analyzeBtn.disabled = false;
-            analyzeBtn.click();
+            runAnalysis();
         }
 
-        analyzeBtn.addEventListener('click', async () => {
+        analyzeBtn.addEventListener('click', () => runAnalysis());
+
+        async function runAnalysis(correction) {
             if (!selectedFile) return;
 
             const formData = new FormData();
             formData.append('file', selectedFile);
+            if (correction) formData.append('correction', correction);
 
             loading.style.display = 'block';
             error.style.display = 'none';
@@ -636,6 +923,7 @@
             analyzeBtn.style.display = 'none';
             logBtn.style.display = 'none';
             results.innerHTML = '';
+            resultsTotals.innerHTML = '';
 
             // Never spin forever: abort if the server takes too long
             const controller = new AbortController();
@@ -649,6 +937,8 @@
                 lastAnalysis = data;
                 displayResults(data);
                 if (data.items && data.items.length > 0) {
+                    setMealTypeSelection(mealType(new Date()));
+                    typePicker.classList.add('visible');
                     logBtn.style.display = 'block';
                     logBtn.textContent = 'Add to log';
                     logBtn.disabled = false;
@@ -663,9 +953,22 @@
                 analyzeBtn.disabled = false;
                 analyzeBtn.style.display = 'block';
             }
-        });
+        }
 
         /* ---------- Logging ---------- */
+        const typePicker = document.getElementById('typePicker');
+        let selectedMealType = null;
+
+        function setMealTypeSelection(type) {
+            selectedMealType = type;
+            typePicker.querySelectorAll('button').forEach(b =>
+                b.classList.toggle('active', b.dataset.type === type));
+        }
+
+        typePicker.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => setMealTypeSelection(btn.dataset.type));
+        });
+
         logBtn.addEventListener('click', async () => {
             if (!lastAnalysis) return;
             logBtn.disabled = true;
@@ -679,13 +982,15 @@
                         items: lastAnalysis.items,
                         totals: lastAnalysis.totals,
                         summary: lastAnalysis.full_description,
-                        thumbnail: makeThumbnail(previewImage)
+                        thumbnail: makeThumbnail(previewImage),
+                        meal_type: selectedMealType
                     })
                 });
                 const data = await response.json();
                 if (!response.ok) throw new Error(data.error || 'Failed to save meal');
 
                 // Reset camera view and show the log
+                typePicker.classList.remove('visible');
                 previewArea.style.display = 'none';
                 results.innerHTML = '';
                 analyzeBtn.style.display = 'none';
@@ -713,23 +1018,97 @@
         }
 
         /* ---------- Home / meal log ---------- */
+        const homeSeg = document.getElementById('homeSeg');
+        const mealModal = document.getElementById('mealModal');
+        const mealModalBody = document.getElementById('mealModalBody');
+
+        let allMeals = [];
+        let homeMode = localStorage.getItem('snaptrack-home-mode') || 'list';
+        let calMonth = null;      // first day of the displayed month
+        let selectedDay = null;   // dateKey of the selected calendar day
+
+        homeSeg.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                homeMode = btn.dataset.mode;
+                localStorage.setItem('snaptrack-home-mode', homeMode);
+                renderHome();
+            });
+        });
+
         async function loadMeals() {
             try {
                 const response = await fetch('/api/meals');
                 const data = await response.json();
-                renderMeals(data.meals || []);
+                allMeals = data.meals || [];
+                renderHome();
             } catch (e) {
                 mealsList.innerHTML = '<div class="empty-state">Could not load your meal log.</div>';
             }
+            loadCoach();
         }
 
-        function renderMeals(meals) {
+        async function loadCoach() {
+            const card = document.getElementById('coachCard');
+            try {
+                const response = await fetch('/api/coach');
+                const data = await response.json();
+                if (data.message) {
+                    document.getElementById('coachMessage').textContent = data.message;
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            } catch (e) {
+                card.style.display = 'none';
+            }
+        }
+
+        function renderHome() {
             const todayKey = dateKey(new Date());
-            const todayMeals = meals.filter(m => dateKey(new Date(m.created_at)) === todayKey);
+            setTodayTotals(allMeals.filter(m => dateKey(new Date(m.created_at)) === todayKey));
 
-            setTodayTotals(todayMeals);
+            homeSeg.querySelectorAll('button').forEach(b =>
+                b.classList.toggle('active', b.dataset.mode === homeMode));
 
-            if (meals.length === 0) {
+            if (homeMode === 'calendar') {
+                renderCalendar();
+            } else {
+                renderList();
+            }
+        }
+
+        function mealType(date) {
+            const h = date.getHours();
+            if (h >= 4 && h < 11) return 'Breakfast';
+            if (h >= 11 && h < 16) return 'Lunch';
+            if (h >= 16 && h < 22) return 'Dinner';
+            return 'Snack';
+        }
+
+        function displayType(m) {
+            return m.meal_type || mealType(new Date(m.created_at));
+        }
+
+        function mealRowHtml(m) {
+            const name = (m.items[0] && m.items[0].description) || m.summary || 'Meal';
+            const when = new Date(m.created_at);
+            const time = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            return `
+                <div class="meal-row" data-id="${m.id}">
+                    ${m.thumbnail
+                        ? `<img class="meal-thumb" src="${m.thumbnail}" alt="">`
+                        : `<div class="meal-thumb placeholder">${name.charAt(0).toUpperCase()}</div>`}
+                    <div class="meal-info">
+                        <div class="meal-name">${name}</div>
+                        <div class="meal-meta"><span class="meal-type">${displayType(m)}</span> · ${time}</div>
+                    </div>
+                    <div class="meal-kcal">${m.calories != null ? Math.round(m.calories) : '–'} <small>kcal</small></div>
+                    <button class="meal-delete" data-id="${m.id}" aria-label="Delete meal">&times;</button>
+                </div>`;
+        }
+
+        function renderList() {
+            if (allMeals.length === 0) {
                 mealsList.innerHTML = `
                     <div class="empty-state">
                         <strong>No meals logged yet</strong><br>
@@ -738,9 +1117,8 @@
                 return;
             }
 
-            // Group by day, newest day first (meals arrive newest-first)
             const groups = new Map();
-            meals.forEach(m => {
+            allMeals.forEach(m => {
                 const key = dateKey(new Date(m.created_at));
                 if (!groups.has(key)) groups.set(key, []);
                 groups.get(key).push(m);
@@ -750,38 +1128,156 @@
             for (const [key, dayMeals] of groups) {
                 const dayKcal = dayMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
                 html += `<div class="day-header">${dayLabel(key)}<span class="day-kcal">${Math.round(dayKcal)} kcal</span></div>`;
-                dayMeals.forEach(m => {
-                    const name = (m.items[0] && m.items[0].description) || m.summary || 'Meal';
-                    const time = new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                    const macros = [
-                        m.protein_g != null ? `${Math.round(m.protein_g)}p` : null,
-                        m.carbs_g != null ? `${Math.round(m.carbs_g)}c` : null,
-                        m.fat_g != null ? `${Math.round(m.fat_g)}f` : null,
-                    ].filter(Boolean).join(' · ');
-                    html += `
-                        <div class="meal-row">
-                            ${m.thumbnail
-                                ? `<img class="meal-thumb" src="${m.thumbnail}" alt="">`
-                                : `<div class="meal-thumb placeholder">${name.charAt(0).toUpperCase()}</div>`}
-                            <div class="meal-info">
-                                <div class="meal-name">${name}</div>
-                                <div class="meal-meta">${time}${macros ? ' · ' + macros : ''}</div>
-                            </div>
-                            <div class="meal-kcal">${m.calories != null ? Math.round(m.calories) : '–'} <small>kcal</small></div>
-                            <button class="meal-delete" data-id="${m.id}" aria-label="Delete meal">&times;</button>
-                        </div>`;
-                });
+                dayMeals.forEach(m => { html += mealRowHtml(m); });
             }
             mealsList.innerHTML = html;
+        }
 
-            mealsList.querySelectorAll('.meal-delete').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    if (!confirm('Remove this meal from your log?')) return;
-                    await fetch(`/api/meals/${btn.dataset.id}`, { method: 'DELETE' });
-                    loadMeals();
+        function renderCalendar() {
+            if (!calMonth) {
+                const now = new Date();
+                calMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            }
+            if (!selectedDay) selectedDay = dateKey(new Date());
+
+            const kcalByDay = new Map();
+            const photoByDay = new Map();
+            allMeals.forEach(m => {
+                const key = dateKey(new Date(m.created_at));
+                kcalByDay.set(key, (kcalByDay.get(key) || 0) + (m.calories || 0));
+                if (m.thumbnail && !photoByDay.has(key)) photoByDay.set(key, m.thumbnail);
+            });
+
+            const monthName = calMonth.toLocaleDateString([], { month: 'long', year: 'numeric' });
+            const todayKey = dateKey(new Date());
+            const daysInMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate();
+            const firstDow = calMonth.getDay();
+
+            let html = `
+                <div class="cal-header">
+                    <button class="cal-nav" id="calPrev">&lsaquo;</button>
+                    <span>${monthName}</span>
+                    <button class="cal-nav" id="calNext">&rsaquo;</button>
+                </div>
+                <div class="cal-grid">
+                    ${['S','M','T','W','T','F','S'].map(d => `<div class="cal-dow">${d}</div>`).join('')}
+                    ${'<div class="cal-day blank"></div>'.repeat(firstDow)}`;
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const key = dateKey(new Date(calMonth.getFullYear(), calMonth.getMonth(), day));
+                const classes = ['cal-day'];
+                const photo = photoByDay.get(key);
+                if (photo) classes.push('has-photo');
+                if (key === selectedDay) classes.push('selected');
+                if (key === todayKey) classes.push('today');
+                const style = photo ? ` style="background-image:url('${photo}')"` : '';
+                html += `
+                    <div class="${classes.join(' ')}" data-day="${key}"${style}>
+                        <span class="num">${day}</span>${!photo && kcalByDay.has(key) ? '<div class="dot"></div>' : ''}
+                    </div>`;
+            }
+            html += '</div>';
+
+            const dayMeals = allMeals.filter(m => dateKey(new Date(m.created_at)) === selectedDay);
+            const dayKcal = dayMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+            html += `<div class="day-header">${dayLabel(selectedDay)}<span class="day-kcal">${Math.round(dayKcal)} kcal</span></div>`;
+            if (dayMeals.length === 0) {
+                html += '<div class="empty-state">No meals logged this day.</div>';
+            } else {
+                dayMeals.forEach(m => { html += mealRowHtml(m); });
+            }
+
+            mealsList.innerHTML = html;
+
+            document.getElementById('calPrev').addEventListener('click', () => {
+                calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1);
+                renderCalendar();
+            });
+            document.getElementById('calNext').addEventListener('click', () => {
+                calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1);
+                renderCalendar();
+            });
+            mealsList.querySelectorAll('.cal-day[data-day]').forEach(cell => {
+                cell.addEventListener('click', () => {
+                    selectedDay = cell.dataset.day;
+                    renderCalendar();
                 });
             });
         }
+
+        /* ---------- Meal detail modal ---------- */
+        mealsList.addEventListener('click', async (e) => {
+            const deleteBtn = e.target.closest('.meal-delete');
+            if (deleteBtn) {
+                if (!confirm('Remove this meal from your log?')) return;
+                await fetch(`/api/meals/${deleteBtn.dataset.id}`, { method: 'DELETE' });
+                loadMeals();
+                return;
+            }
+            const row = e.target.closest('.meal-row');
+            if (row) openMealDetail(Number(row.dataset.id));
+        });
+
+        function openMealDetail(id) {
+            const m = allMeals.find(meal => meal.id === id);
+            if (!m) return;
+
+            const when = new Date(m.created_at);
+            const time = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+            let html = '<div class="modal-handle"></div>';
+
+            if (m.calories != null) {
+                html += `
+                    <div class="totals-card">
+                        <div class="totals-label">${displayType(m)}</div>
+                        <div class="totals-calories">${Math.round(m.calories)} <span>kcal est.</span></div>
+                        <div class="totals-macros">
+                            <div class="macro"><strong>${m.protein_g != null ? Math.round(m.protein_g) : '–'}g</strong><small>protein</small></div>
+                            <div class="macro"><strong>${m.carbs_g != null ? Math.round(m.carbs_g) : '–'}g</strong><small>carbs</small></div>
+                            <div class="macro"><strong>${m.fat_g != null ? Math.round(m.fat_g) : '–'}g</strong><small>fat</small></div>
+                        </div>
+                    </div>`;
+            }
+
+            html += `<div class="modal-meta">${dayLabel(dateKey(when))} · <span class="meal-type">${displayType(m)}</span> · ${time}</div>`;
+
+            if (m.thumbnail) html += `<img src="${m.thumbnail}" alt="Meal photo">`;
+            if (m.summary) html += `<div class="summary-card">${m.summary.replace(/\n/g, '<br>')}</div>`;
+
+            m.items.forEach(item => {
+                html += `
+                    <div class="food-item">
+                        <div class="food-item-header">
+                            <span class="food-name">${item.description}</span>
+                        </div>
+                        ${item.portion ? `<div class="food-portion">Portion: ${item.portion}</div>` : ''}
+                        ${item.calories != null ? `
+                        <div class="nutrition-row">
+                            <div class="nutrition-chip"><strong>${Math.round(item.calories)}</strong> kcal</div>
+                            ${item.protein_g != null ? `<div class="nutrition-chip"><strong>${item.protein_g}g</strong> protein</div>` : ''}
+                            ${item.carbs_g != null ? `<div class="nutrition-chip"><strong>${item.carbs_g}g</strong> carbs</div>` : ''}
+                            ${item.fat_g != null ? `<div class="nutrition-chip"><strong>${item.fat_g}g</strong> fat</div>` : ''}
+                        </div>` : ''}
+                    </div>`;
+            });
+
+            html += `<button class="btn-danger" id="modalDelete">Remove from log</button>`;
+
+            mealModalBody.innerHTML = html;
+            mealModal.classList.add('open');
+
+            document.getElementById('modalDelete').addEventListener('click', async () => {
+                if (!confirm('Remove this meal from your log?')) return;
+                await fetch(`/api/meals/${id}`, { method: 'DELETE' });
+                mealModal.classList.remove('open');
+                loadMeals();
+            });
+        }
+
+        mealModal.addEventListener('click', (e) => {
+            if (e.target === mealModal) mealModal.classList.remove('open');
+        });
 
         function setTodayTotals(todayMeals) {
             const sum = field => todayMeals.reduce((s, m) => s + (m[field] || 0), 0);
@@ -806,15 +1302,15 @@
 
         /* ---------- Results rendering ---------- */
         function displayResults(data) {
+            resultsTotals.innerHTML = '';
+
             if (!data.items || data.items.length === 0) {
                 results.innerHTML = `<div class="no-results">${data.full_description || 'No food items detected. Try a clearer photo.'}</div>`;
                 return;
             }
 
-            let html = '';
-
             if (data.totals && data.totals.calories != null) {
-                html += `
+                resultsTotals.innerHTML = `
                     <div class="totals-card">
                         <div class="totals-label">This meal</div>
                         <div class="totals-calories">${Math.round(data.totals.calories)} <span>kcal est.</span></div>
@@ -827,17 +1323,18 @@
                 `;
             }
 
+            let html = '';
+
             if (data.full_description) {
                 html += `<div class="summary-card">${data.full_description.replace(/\n/g, '<br>')}</div>`;
             }
 
-            data.items.forEach(item => {
+            data.items.forEach((item, index) => {
                 const hasNutrition = item.calories != null;
                 html += `
                     <div class="food-item">
                         <div class="food-item-header">
                             <span class="food-name">${item.description}</span>
-                            ${item.confidence ? `<span class="food-confidence">${item.confidence}%</span>` : ''}
                         </div>
                         ${item.portion ? `<div class="food-portion">Portion: ${item.portion}</div>` : ''}
                         ${hasNutrition ? `
@@ -847,11 +1344,22 @@
                             ${item.carbs_g != null ? `<div class="nutrition-chip"><strong>${item.carbs_g}g</strong> carbs</div>` : ''}
                             ${item.fat_g != null ? `<div class="nutrition-chip"><strong>${item.fat_g}g</strong> fat</div>` : ''}
                         </div>` : ''}
+                        <button class="food-edit" data-index="${index}">Not right? Edit</button>
                     </div>
                 `;
             });
 
             results.innerHTML = html;
+
+            results.querySelectorAll('.food-edit').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = data.items[btn.dataset.index];
+                    const corrected = prompt('What is this food actually?', item.description);
+                    if (corrected && corrected.trim() && corrected.trim() !== item.description) {
+                        runAnalysis(`The item "${item.description}" is actually: ${corrected.trim()}`);
+                    }
+                });
+            });
         }
 
         function showError(message) {
