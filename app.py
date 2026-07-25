@@ -5,8 +5,10 @@ import sqlite3
 import time
 from datetime import datetime
 
+import secrets
+
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, render_template_string
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -48,6 +50,63 @@ init_db()
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+
+# Set SECRET_KEY in production so sessions survive restarts
+app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
+
+# When APP_PASSWORD is set (i.e. deployed publicly), the whole app requires it:
+# humans get a login page, machine clients send it as an X-App-Key header
+APP_PASSWORD = os.environ.get('APP_PASSWORD')
+
+LOGIN_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapTrack - Sign in</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+body { font-family: 'Nunito', sans-serif; background: #edf5ec; color: #16302a;
+       min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+form { background: #fff; border: 1px solid #dde8dd; border-radius: 20px; padding: 32px; width: 100%; max-width: 380px; text-align: center; }
+h1 { font-size: 1.4em; margin-bottom: 4px; } h1 span { color: #6D9773; }
+p { color: #5f7268; font-size: 0.9em; margin-bottom: 20px; }
+input { width: 100%; padding: 14px; border: 1px solid #dde8dd; border-radius: 12px; font-size: 1em; margin-bottom: 12px; font-family: inherit; }
+button { width: 100%; padding: 14px; border: none; border-radius: 12px; background: #6D9773; color: #fff; font-weight: 700; font-size: 1em; cursor: pointer; font-family: inherit; }
+.err { color: #d94f3d; font-size: 0.9em; margin-bottom: 12px; }
+</style></head><body>
+<form method="post">
+  <h1>SnapTrack<span>.</span></h1>
+  <p>Enter the access code to continue</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <input type="password" name="password" placeholder="Access code" autofocus>
+  <button type="submit">Sign in</button>
+</form></body></html>"""
+
+
+@app.before_request
+def require_access():
+    if not APP_PASSWORD:
+        return  # local development, no gate
+    if request.endpoint in ('login', 'static'):
+        return
+    if session.get('authed'):
+        return
+    if request.headers.get('X-App-Key') == APP_PASSWORD:
+        return
+    if request.path.startswith('/api/') or request.path == '/upload':
+        return jsonify({'error': 'Unauthorized'}), 401
+    return redirect(url_for('login'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        if secrets.compare_digest(request.form.get('password', ''), APP_PASSWORD or ''):
+            session['authed'] = True
+            session.permanent = True
+            return redirect(url_for('index'))
+        error = 'Wrong access code'
+    return render_template_string(LOGIN_PAGE, error=error)
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 # 25s hard timeout per API call so a stuck request can't hang the app;
@@ -398,6 +457,9 @@ def delete_meal(meal_id):
 
 
 if __name__ == '__main__':
-    # Port 5001: macOS AirPlay Receiver occupies port 5000
+    # Local default port 5001: macOS AirPlay Receiver occupies port 5000
     # host 0.0.0.0: reachable from phones on the same Wi-Fi for camera testing
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # In production, run under gunicorn instead: gunicorn -w 2 -b 0.0.0.0:$PORT app:app
+    port = int(os.environ.get('PORT', 5001))
+    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+    app.run(debug=debug, host='0.0.0.0', port=port)
