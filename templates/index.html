@@ -795,6 +795,129 @@
             border-color: var(--accent);
         }
 
+        /* ---------- Trends view ---------- */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .stat-tile {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 14px 16px;
+        }
+
+        .stat-label {
+            color: var(--ink-soft);
+            font-size: 0.78em;
+            font-weight: 700;
+        }
+
+        .stat-value {
+            font-size: 1.7em;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-top: 2px;
+        }
+
+        .stat-value small {
+            font-size: 0.55em;
+            font-weight: 600;
+            color: var(--ink-soft);
+        }
+
+        .chart-card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .chart-title {
+            font-weight: 800;
+            font-size: 0.95em;
+        }
+
+        .chart-sub {
+            color: var(--ink-soft);
+            font-size: 0.8em;
+            margin-bottom: 10px;
+        }
+
+        .chart-card svg {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .chart-legend {
+            display: flex;
+            gap: 14px;
+            margin-top: 10px;
+            font-size: 0.78em;
+            font-weight: 700;
+            color: var(--ink-soft);
+        }
+
+        .legend-swatch {
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            display: inline-block;
+            margin-right: 5px;
+            vertical-align: -1px;
+        }
+
+        .chart-tooltip {
+            position: fixed;
+            background: var(--deep);
+            color: #ffffff;
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 0.8em;
+            line-height: 1.5;
+            pointer-events: none;
+            z-index: 30;
+            display: none;
+            box-shadow: 0 4px 14px rgba(12, 59, 46, 0.3);
+            max-width: 220px;
+        }
+
+        .chart-tooltip .tip-day {
+            color: #9dbfa6;
+            font-weight: 700;
+            font-size: 0.9em;
+        }
+
+        .chart-tooltip .tip-row strong {
+            color: var(--highlight);
+        }
+
+        .chart-tooltip .tip-key {
+            display: inline-block;
+            width: 8px;
+            height: 3px;
+            border-radius: 2px;
+            vertical-align: 3px;
+            margin-right: 5px;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
         /* Meal detail modal */
         .modal-overlay {
             position: fixed;
@@ -898,6 +1021,31 @@
             <div id="mealsList"></div>
         </div>
 
+        <!-- ---------- Trends view ---------- -->
+        <div class="view" id="trendsView">
+            <div class="stat-grid" id="statGrid"></div>
+            <div class="coach-card" id="insightCard" style="display: none;">
+                <div class="coach-label">This week</div>
+                <div id="insightMessage"></div>
+            </div>
+            <div class="chart-card" id="calChartCard">
+                <div class="chart-title">Calories</div>
+                <div class="chart-sub">Daily total, last 14 days</div>
+                <div id="calChart"></div>
+            </div>
+            <div class="chart-card" id="macroChartCard">
+                <div class="chart-title">Macros</div>
+                <div class="chart-sub">Grams per day, last 14 days</div>
+                <div id="macroChart"></div>
+                <div class="chart-legend" id="macroLegend"></div>
+            </div>
+            <div class="empty-state" id="trendsEmpty" style="display: none;">
+                <strong>Nothing to chart yet</strong><br>
+                Log a few meals and your trends will show up here.
+            </div>
+            <table class="sr-only" id="trendsTable"></table>
+        </div>
+
         <!-- Meal detail modal -->
         <div class="modal-overlay" id="mealModal">
             <div class="modal" id="mealModalBody"></div>
@@ -962,7 +1110,13 @@
             <svg viewBox="0 0 24 24"><path d="M4 7h3l2-2.5h6L17 7h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
             Camera
         </button>
+        <button class="tab" id="trendsTab">
+            <svg viewBox="0 0 24 24"><path d="M22 7l-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></svg>
+            Trends
+        </button>
     </nav>
+
+    <div class="chart-tooltip" id="chartTip"></div>
 
     <script>
         const uploadArea = document.getElementById('uploadArea');
@@ -988,19 +1142,29 @@
         let lastAnalysis = null;
 
         /* ---------- Tabs ---------- */
+        const trendsView = document.getElementById('trendsView');
+        const trendsTab = document.getElementById('trendsTab');
+
+        const VIEWS = {
+            home: { view: homeView, tab: homeTab, subtitle: 'Your meal log', onShow: () => loadMeals() },
+            camera: { view: cameraView, tab: cameraTab, subtitle: 'Snap your food, know your macros', onShow: null },
+            trends: { view: trendsView, tab: trendsTab, subtitle: 'Your week at a glance', onShow: () => loadTrends() },
+        };
+
         function switchView(name) {
-            const isHome = name === 'home';
-            homeView.classList.toggle('active', isHome);
-            cameraView.classList.toggle('active', !isHome);
-            homeTab.classList.toggle('active', isHome);
-            cameraTab.classList.toggle('active', !isHome);
-            subtitle.textContent = isHome ? 'Your meal log' : 'Snap your food, know your macros';
+            if (!VIEWS[name]) name = 'camera';
+            for (const [key, v] of Object.entries(VIEWS)) {
+                v.view.classList.toggle('active', key === name);
+                v.tab.classList.toggle('active', key === name);
+            }
+            subtitle.textContent = VIEWS[name].subtitle;
             localStorage.setItem('snaptrack-view', name);
-            if (isHome) loadMeals();
+            if (VIEWS[name].onShow) VIEWS[name].onShow();
         }
 
         homeTab.addEventListener('click', () => switchView('home'));
         cameraTab.addEventListener('click', () => switchView('camera'));
+        trendsTab.addEventListener('click', () => switchView('trends'));
 
         // Restore whichever screen was open before the refresh
         switchView(localStorage.getItem('snaptrack-view') || 'camera');
@@ -1546,6 +1710,302 @@
             if (key === yesterday) return 'Yesterday';
             const [y, m, d] = key.split('-').map(Number);
             return new Date(y, m - 1, d).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+        }
+
+        /* ---------- Trends ---------- */
+        const chartTip = document.getElementById('chartTip');
+        const TREND_DAYS = 14;
+        const MACRO_SERIES = [
+            // Validated categorical triad (CVD-safe on white): brand-adjacent
+            // forest / fresh green / amber with enough chroma to read as data
+            { key: 'protein_g', label: 'Protein', color: '#1E7A4E' },
+            { key: 'carbs_g',   label: 'Carbs',   color: '#66B85E' },
+            { key: 'fat_g',     label: 'Fat',     color: '#C9720F' },
+        ];
+
+        async function loadTrends() {
+            try {
+                const [mealsResponse] = await Promise.all([fetch('/api/meals'), loadGoals()]);
+                const data = await mealsResponse.json();
+                allMeals = data.meals || [];
+            } catch (e) { /* chart whatever we already have */ }
+            renderTrends();
+            loadInsight();
+        }
+
+        async function loadInsight() {
+            const card = document.getElementById('insightCard');
+            try {
+                const response = await fetch('/api/insights/weekly');
+                const data = await response.json();
+                if (data.message) {
+                    document.getElementById('insightMessage').textContent = data.message;
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            } catch (e) {
+                card.style.display = 'none';
+            }
+        }
+
+        function trendDays() {
+            const days = [];
+            for (let i = TREND_DAYS - 1; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const key = dateKey(d);
+                days.push({ key, dayNum: d.getDate(), totals: { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, meals: 0 } });
+            }
+            const byKey = new Map(days.map(d => [d.key, d.totals]));
+            allMeals.forEach(m => {
+                const t = byKey.get(dateKey(new Date(m.created_at)));
+                if (!t) return;
+                t.kcal += m.calories || 0;
+                t.protein_g += m.protein_g || 0;
+                t.carbs_g += m.carbs_g || 0;
+                t.fat_g += m.fat_g || 0;
+                t.meals += 1;
+            });
+            return days;
+        }
+
+        function renderTrends() {
+            const days = trendDays();
+            const hasData = days.some(d => d.totals.meals > 0);
+            document.getElementById('trendsEmpty').style.display = hasData ? 'none' : 'block';
+            document.getElementById('calChartCard').style.display = hasData ? 'block' : 'none';
+            document.getElementById('macroChartCard').style.display = hasData ? 'block' : 'none';
+            renderStats(days);
+            if (!hasData) return;
+
+            renderColumnChart(document.getElementById('calChart'), days,
+                [{ key: 'kcal', label: 'Calories', color: '#6D9773' }],
+                { goal: goals.calorie_goal, unit: 'kcal' });
+
+            renderColumnChart(document.getElementById('macroChart'), days, MACRO_SERIES, { unit: 'g' });
+
+            const legend = document.getElementById('macroLegend');
+            legend.innerHTML = '';
+            MACRO_SERIES.forEach(s => {
+                const item = document.createElement('span');
+                const swatch = document.createElement('span');
+                swatch.className = 'legend-swatch';
+                swatch.style.background = s.color;
+                item.appendChild(swatch);
+                item.appendChild(document.createTextNode(s.label));
+                legend.appendChild(item);
+            });
+
+            renderTrendsTable(days);
+        }
+
+        function renderStats(days) {
+            const last7 = days.slice(-7);
+            const logged = last7.filter(d => d.totals.meals > 0);
+            const avg = f => logged.length
+                ? Math.round(logged.reduce((s, d) => s + d.totals[f], 0) / logged.length) : 0;
+
+            // Streak: consecutive logged days ending today (an unlogged today doesn't break it yet)
+            const loggedKeys = new Set(allMeals.map(m => dateKey(new Date(m.created_at))));
+            let streak = 0;
+            const cursor = new Date();
+            if (!loggedKeys.has(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+            while (loggedKeys.has(dateKey(cursor))) {
+                streak++;
+                cursor.setDate(cursor.getDate() - 1);
+            }
+
+            const tiles = [
+                { label: 'Avg calories', value: avg('kcal'), unit: 'kcal / day' },
+                { label: 'Avg protein', value: avg('protein_g'), unit: 'g / day' },
+                { label: 'Days logged', value: logged.length, unit: 'of last 7' },
+                { label: 'Streak', value: streak, unit: streak === 1 ? 'day' : 'days' },
+            ];
+            const grid = document.getElementById('statGrid');
+            grid.innerHTML = '';
+            tiles.forEach(t => {
+                const tile = document.createElement('div');
+                tile.className = 'stat-tile';
+                const label = document.createElement('div');
+                label.className = 'stat-label';
+                label.textContent = t.label;
+                const value = document.createElement('div');
+                value.className = 'stat-value';
+                value.textContent = t.value.toLocaleString() + ' ';
+                const unit = document.createElement('small');
+                unit.textContent = t.unit;
+                value.appendChild(unit);
+                tile.appendChild(label);
+                tile.appendChild(value);
+                grid.appendChild(tile);
+            });
+        }
+
+        function niceMax(v) {
+            if (v <= 0) return 100;
+            const mag = Math.pow(10, Math.floor(Math.log10(v)));
+            for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+                if (m * mag >= v) return m * mag;
+            }
+            return 10 * mag;
+        }
+
+        // Path for a column with a 4px rounded top and a square baseline
+        function columnPath(x, y, w, h, r) {
+            r = Math.min(r, h, w / 2);
+            return `M${x} ${y + h} L${x} ${y + r} Q${x} ${y} ${x + r} ${y}`
+                 + ` L${x + w - r} ${y} Q${x + w} ${y} ${x + w} ${y + r} L${x + w} ${y + h} Z`;
+        }
+
+        function renderColumnChart(container, days, series, opts = {}) {
+            const W = 520, H = 190;
+            const pad = { top: 14, right: 6, bottom: 20, left: 40 };
+            const plotW = W - pad.left - pad.right;
+            const plotH = H - pad.top - pad.bottom;
+
+            const dayTotal = d => series.reduce((s, sr) => s + d.totals[sr.key], 0);
+            const rawMax = Math.max(...days.map(dayTotal), opts.goal || 0);
+            const yMax = niceMax(rawMax);
+            const yFor = v => pad.top + plotH * (1 - v / yMax);
+
+            const step = plotW / days.length;
+            const barW = Math.min(24, step - 4);
+            const ns = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(ns, 'svg');
+            svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+            svg.setAttribute('role', 'img');
+
+            const el = (tag, attrs, parent = svg) => {
+                const node = document.createElementNS(ns, tag);
+                for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+                parent.appendChild(node);
+                return node;
+            };
+
+            // Gridlines + y ticks at 0, ½, max — recessive hairlines, clean numbers
+            [0, yMax / 2, yMax].forEach(v => {
+                const y = yFor(v);
+                el('line', { x1: pad.left, y1: y, x2: W - pad.right, y2: y,
+                             stroke: '#dde8dd', 'stroke-width': 1 });
+                const tick = el('text', { x: pad.left - 6, y: y + 3, 'text-anchor': 'end',
+                                          'font-size': 10, fill: '#5f7268' });
+                tick.textContent = v.toLocaleString();
+            });
+
+            // Columns (stacked when multiple series), 2px surface gaps between segments
+            days.forEach((d, i) => {
+                const x = pad.left + i * step + (step - barW) / 2;
+                let cumTop = yFor(0);
+                const segments = series
+                    .map(sr => ({ sr, h: plotH * (d.totals[sr.key] / yMax) }))
+                    .filter(seg => seg.h > 0);
+                segments.forEach((seg, si) => {
+                    const isTop = si === segments.length - 1;
+                    // 2px surface gap sits at each segment's TOP edge (between it
+                    // and the segment above), so the stack stays flush at the baseline
+                    const gap = isTop ? 0 : 2;
+                    const yTop = cumTop - seg.h;
+                    const y = yTop + gap;
+                    const h = Math.max(seg.h - gap, 0.5);
+                    el('path', { d: isTop ? columnPath(x, y, barW, h, 4)
+                                          : `M${x} ${y} h${barW} v${h} h${-barW} Z`,
+                                 fill: seg.sr.color });
+                    cumTop = yTop;
+                });
+            });
+
+            // Goal reference line
+            if (opts.goal && opts.goal <= yMax) {
+                const y = yFor(opts.goal);
+                el('line', { x1: pad.left, y1: y, x2: W - pad.right, y2: y,
+                             stroke: '#B46617', 'stroke-width': 1.5 });
+                const label = el('text', { x: W - pad.right, y: y - 4, 'text-anchor': 'end',
+                                           'font-size': 10, 'font-weight': 700, fill: '#5f7268' });
+                label.textContent = `goal ${Math.round(opts.goal).toLocaleString()}`;
+            }
+
+            // X labels: day of month, every other day
+            days.forEach((d, i) => {
+                if (i % 2 === 0) return;
+                const t = el('text', { x: pad.left + i * step + step / 2, y: H - 6,
+                                       'text-anchor': 'middle', 'font-size': 10, fill: '#5f7268' });
+                t.textContent = d.dayNum;
+            });
+
+            // Hover layer: a full-height hit column per day, tooltip lists every series
+            days.forEach((d, i) => {
+                const hit = el('rect', { x: pad.left + i * step, y: pad.top,
+                                         width: step, height: plotH, fill: 'transparent' });
+                hit.addEventListener('pointermove', e => showChartTip(e, d, series, opts.unit));
+                hit.addEventListener('pointerleave', hideChartTip);
+            });
+            svg.addEventListener('pointerleave', hideChartTip);
+
+            container.innerHTML = '';
+            container.appendChild(svg);
+        }
+
+        function showChartTip(e, d, series, unit) {
+            chartTip.innerHTML = '';
+            const dayEl = document.createElement('div');
+            dayEl.className = 'tip-day';
+            dayEl.textContent = dayLabel(d.key);
+            chartTip.appendChild(dayEl);
+
+            if (d.totals.meals === 0) {
+                const row = document.createElement('div');
+                row.className = 'tip-row';
+                row.textContent = 'Nothing logged';
+                chartTip.appendChild(row);
+            } else {
+                series.forEach(sr => {
+                    const row = document.createElement('div');
+                    row.className = 'tip-row';
+                    const key = document.createElement('span');
+                    key.className = 'tip-key';
+                    key.style.background = sr.color;
+                    const value = document.createElement('strong');
+                    value.textContent = `${Math.round(d.totals[sr.key]).toLocaleString()}${unit === 'g' ? 'g' : ''} `;
+                    row.appendChild(key);
+                    row.appendChild(value);
+                    row.appendChild(document.createTextNode(sr.label === 'Calories' ? 'kcal' : sr.label.toLowerCase()));
+                    chartTip.appendChild(row);
+                });
+            }
+
+            chartTip.style.display = 'block';
+            const rect = chartTip.getBoundingClientRect();
+            const left = Math.min(Math.max(e.clientX - rect.width / 2, 8), window.innerWidth - rect.width - 8);
+            const top = e.clientY - rect.height - 14;
+            chartTip.style.left = left + 'px';
+            chartTip.style.top = Math.max(top, 8) + 'px';
+        }
+
+        function hideChartTip() {
+            chartTip.style.display = 'none';
+        }
+
+        // Screen-reader table mirroring both charts, so no value is hover-only
+        function renderTrendsTable(days) {
+            const table = document.getElementById('trendsTable');
+            table.innerHTML = '';
+            const caption = document.createElement('caption');
+            caption.textContent = 'Daily calories and macros, last 14 days';
+            table.appendChild(caption);
+            const head = table.insertRow();
+            ['Day', 'Calories', 'Protein (g)', 'Carbs (g)', 'Fat (g)'].forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                head.appendChild(th);
+            });
+            days.forEach(d => {
+                const row = table.insertRow();
+                [dayLabel(d.key), Math.round(d.totals.kcal), Math.round(d.totals.protein_g),
+                 Math.round(d.totals.carbs_g), Math.round(d.totals.fat_g)].forEach(v => {
+                    row.insertCell().textContent = v;
+                });
+            });
         }
 
         /* ---------- Results rendering ---------- */

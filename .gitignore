@@ -44,6 +44,11 @@ uploads/
 !package.json
 !static/manifest.json
 !static/*.png
+!eval/manifest.example.json
+
+# Eval photos and cached predictions stay local
+eval/photos/
+eval/results/
 
 # IDE
 .vscode/

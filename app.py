@@ -3,7 +3,7 @@ import json
 import os
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import secrets
 
@@ -444,6 +444,67 @@ Be warm but direct. No greetings, no emoji, no generic platitudes like "keep it 
         return jsonify({'message': message})
     except Exception as e:
         app.logger.warning(f"Coach generation failed: {e}")
+        return jsonify({'message': None})
+
+
+_insight_cache = {'key': None, 'text': None}
+
+
+@app.route('/api/insights/weekly')
+def weekly_insight():
+    """2-3 sentence Gemini read on the last 7 days of eating"""
+    if client is None:
+        return jsonify({'message': None})
+
+    week_ago = (datetime.now() - timedelta(days=6)).strftime('%Y-%m-%d')
+    with get_db() as db:
+        rows = db.execute(
+            q('SELECT * FROM meals WHERE created_at >= ? ORDER BY created_at'),
+            (week_ago,)).fetchall()
+
+    # Not enough data for trends to mean anything yet
+    if len(rows) < 3:
+        return jsonify({'message': None})
+
+    cache_key = (datetime.now().strftime('%Y-%m-%d'), len(rows), rows[-1]['id'], str(_get_goals()))
+    if _insight_cache['key'] == cache_key:
+        return jsonify({'message': _insight_cache['text']})
+
+    # One line per day: date, meal count, kcal, macros
+    days = {}
+    for row in rows:
+        day = row['created_at'][:10]
+        d = days.setdefault(day, {'meals': 0, 'kcal': 0, 'protein': 0, 'carbs': 0, 'fat': 0})
+        d['meals'] += 1
+        d['kcal'] += row['calories'] or 0
+        d['protein'] += row['protein_g'] or 0
+        d['carbs'] += row['carbs_g'] or 0
+        d['fat'] += row['fat_g'] or 0
+
+    day_lines = [
+        f"- {day}: {d['meals']} meals, {round(d['kcal'])} kcal, "
+        f"{round(d['protein'])}g protein, {round(d['carbs'])}g carbs, {round(d['fat'])}g fat"
+        for day, d in sorted(days.items())
+    ]
+
+    prompt = f"""You are a friendly, no-nonsense nutrition coach inside a food tracking app.
+Here is the user's eating log for the past week (days with no line were not logged):
+
+{chr(10).join(day_lines)}
+
+{_goals_line()}
+Write TWO or THREE short sentences (max 60 words total) about their WEEK as a whole:
+a pattern, trend, or comparison across days that a single-day view would miss.
+Reference actual numbers or days. Be warm but direct. No greetings, no emoji,
+no generic platitudes like "keep it up", no lecturing about health."""
+
+    try:
+        message = _generate_text(prompt)
+        _insight_cache['key'] = cache_key
+        _insight_cache['text'] = message
+        return jsonify({'message': message})
+    except Exception as e:
+        app.logger.warning(f"Weekly insight generation failed: {e}")
         return jsonify({'message': None})
 
 
