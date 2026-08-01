@@ -411,6 +411,40 @@
             margin-bottom: 12px;
         }
 
+        .portion-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .portion-row .portion-label {
+            color: var(--ink-soft);
+            font-size: 0.78em;
+            font-weight: 700;
+            margin-right: 2px;
+        }
+
+        .portion-row button {
+            flex: 1;
+            max-width: 64px;
+            padding: 7px 0;
+            min-height: 36px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: var(--card);
+            color: var(--ink-soft);
+            font-weight: 700;
+            font-size: 0.8em;
+            cursor: pointer;
+        }
+
+        .portion-row button.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #ffffff;
+        }
+
         .food-edit {
             background: none;
             border: none;
@@ -1294,8 +1328,15 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        items: lastAnalysis.items,
-                        totals: lastAnalysis.totals,
+                        // Log portion-corrected values; note the adjustment in the portion text
+                        items: lastAnalysis.items.map(item => {
+                            const s = item.portion_scale || 1;
+                            const scaled = scaledItem(item);
+                            delete scaled.portion_scale;
+                            if (s !== 1 && scaled.portion) scaled.portion += ` (adjusted ×${s})`;
+                            return scaled;
+                        }),
+                        totals: scaledTotals(lastAnalysis.items),
                         summary: lastAnalysis.full_description,
                         thumbnail: makeThumbnail(previewImage),
                         meal_type: selectedMealType
@@ -2009,6 +2050,31 @@
         }
 
         /* ---------- Results rendering ---------- */
+        const PORTION_SCALES = [
+            { value: 0.5, label: '½×' },
+            { value: 1, label: '1×' },
+            { value: 1.5, label: '1½×' },
+            { value: 2, label: '2×' },
+        ];
+
+        // Item nutrition scaled by its user-set portion multiplier
+        function scaledItem(item) {
+            const s = item.portion_scale || 1;
+            const scale = v => v == null ? null : Math.round(v * s * 10) / 10;
+            return { ...item,
+                calories: scale(item.calories), protein_g: scale(item.protein_g),
+                carbs_g: scale(item.carbs_g), fat_g: scale(item.fat_g) };
+        }
+
+        function scaledTotals(items) {
+            const totals = {};
+            for (const field of ['calories', 'protein_g', 'carbs_g', 'fat_g']) {
+                const values = items.map(i => scaledItem(i)[field]).filter(v => v != null);
+                totals[field] = values.length ? Math.round(values.reduce((a, b) => a + b) * 10) / 10 : null;
+            }
+            return totals;
+        }
+
         function displayResults(data) {
             resultsTotals.innerHTML = '';
 
@@ -2017,15 +2083,16 @@
                 return;
             }
 
-            if (data.totals && data.totals.calories != null) {
+            const totals = scaledTotals(data.items);
+            if (totals.calories != null) {
                 resultsTotals.innerHTML = `
                     <div class="totals-card">
                         <div class="totals-label">This meal</div>
-                        <div class="totals-calories">${Math.round(data.totals.calories)} <span>kcal est.</span></div>
+                        <div class="totals-calories">${Math.round(totals.calories)} <span>kcal est.</span></div>
                         <div class="totals-macros">
-                            <div class="macro"><strong>${data.totals.protein_g ?? '–'}g</strong><small>protein</small></div>
-                            <div class="macro"><strong>${data.totals.carbs_g ?? '–'}g</strong><small>carbs</small></div>
-                            <div class="macro"><strong>${data.totals.fat_g ?? '–'}g</strong><small>fat</small></div>
+                            <div class="macro"><strong>${totals.protein_g ?? '–'}g</strong><small>protein</small></div>
+                            <div class="macro"><strong>${totals.carbs_g ?? '–'}g</strong><small>carbs</small></div>
+                            <div class="macro"><strong>${totals.fat_g ?? '–'}g</strong><small>fat</small></div>
                         </div>
                     </div>
                 `;
@@ -2038,7 +2105,9 @@
             }
 
             data.items.forEach((item, index) => {
-                const hasNutrition = item.calories != null;
+                const shown = scaledItem(item);
+                const hasNutrition = shown.calories != null;
+                const scale = item.portion_scale || 1;
                 html += `
                     <div class="food-item">
                         <div class="food-item-header">
@@ -2047,10 +2116,15 @@
                         ${item.portion ? `<div class="food-portion">Portion: ${item.portion}</div>` : ''}
                         ${hasNutrition ? `
                         <div class="nutrition-row">
-                            <div class="nutrition-chip"><strong>${Math.round(item.calories)}</strong> kcal</div>
-                            ${item.protein_g != null ? `<div class="nutrition-chip"><strong>${item.protein_g}g</strong> protein</div>` : ''}
-                            ${item.carbs_g != null ? `<div class="nutrition-chip"><strong>${item.carbs_g}g</strong> carbs</div>` : ''}
-                            ${item.fat_g != null ? `<div class="nutrition-chip"><strong>${item.fat_g}g</strong> fat</div>` : ''}
+                            <div class="nutrition-chip"><strong>${Math.round(shown.calories)}</strong> kcal</div>
+                            ${shown.protein_g != null ? `<div class="nutrition-chip"><strong>${shown.protein_g}g</strong> protein</div>` : ''}
+                            ${shown.carbs_g != null ? `<div class="nutrition-chip"><strong>${shown.carbs_g}g</strong> carbs</div>` : ''}
+                            ${shown.fat_g != null ? `<div class="nutrition-chip"><strong>${shown.fat_g}g</strong> fat</div>` : ''}
+                        </div>
+                        <div class="portion-row" data-index="${index}">
+                            <span class="portion-label">Portion</span>
+                            ${PORTION_SCALES.map(p =>
+                                `<button data-scale="${p.value}" class="${p.value === scale ? 'active' : ''}">${p.label}</button>`).join('')}
                         </div>` : ''}
                         <button class="food-edit" data-index="${index}">Not right? Edit</button>
                         <div class="edit-row" data-index="${index}">
@@ -2068,6 +2142,14 @@
                     const row = results.querySelector(`.edit-row[data-index="${btn.dataset.index}"]`);
                     const isOpen = row.classList.toggle('open');
                     if (isOpen) row.querySelector('input').focus();
+                });
+            });
+
+            results.querySelectorAll('.portion-row button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = data.items[btn.closest('.portion-row').dataset.index];
+                    item.portion_scale = Number(btn.dataset.scale);
+                    displayResults(data);
                 });
             });
 
