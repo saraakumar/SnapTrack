@@ -33,6 +33,22 @@ one photo every few seconds.
   (robust to one bad miss), MAE in kcal, and the share of photos within
   20% / 30% of truth. Macro MAPEs when ground truth includes them.
 
+## Results so far (Aug 2026, 50 Nutrition5k dishes, gemini-3.1-flash-lite)
+
+| | Baseline prompt | + mass-first estimation |
+|---|---|---|
+| Calorie MAPE | 35.6% | 33.4% |
+| Bias on dishes <200 kcal | +25.7% | **−1.5%** |
+| Bias on dishes ≥400 kcal | −10.1% | −12.1% |
+| Fat MAPE | 177% | **47%** |
+
+Error analysis showed the baseline regressed toward "typical meal" calories
+(over-predicting light plates, under-predicting dense ones). Rewriting the
+prompt to estimate grams first, multiply by energy density, and explicitly
+permit extreme values eliminated the light-dish bias and fixed fat estimation;
+remaining calorie error is mostly per-dish scatter. Ground truth via
+`fetch_nutrition5k.py` (Nutrition5k: real dishes, per-ingredient scale weights).
+
 For context: nutrition-estimation literature generally considers ±20%
 good for photo-based estimation — even human dietitians often miss by that
 much on restaurant meals.

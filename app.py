@@ -156,6 +156,14 @@ CRITICAL RULES:
 2. Be specific about ingredients. NEVER use generic terms like "burger" alone - describe what's visible on/in it.
 3. Estimate the portion size from visual cues (plate size, item dimensions) and base nutrition estimates on that portion.
 4. Nutrition values are estimates for the ENTIRE visible portion of each item, not per 100g.
+5. Work in two steps: first estimate each item's MASS in grams from visual cues, then compute
+   calories as mass x that food's typical energy density (kcal per 100g). Do not shortcut to a
+   "typical serving" calorie count - the visible portion is often much smaller or larger than typical.
+6. Commit to extreme values when the food warrants it. A plain vegetable plate can be under 100 kcal
+   total - do not inflate it toward a "normal meal". Calorie-dense foods (nuts, seeds, oils, dressings,
+   nut butters) pack hundreds of kcal into a small volume - do not deflate them.
+7. Distinguish look-alikes that differ hugely in calories: egg whites vs whole eggs, dressed vs
+   undressed salad, oil-glossed vs dry-cooked vegetables. When such a detail is visible, use it.
 
 Each distinct food item gets its own entry in "items". If the image contains no food,
 return an empty items list and explain what the image shows in "summary"."""
