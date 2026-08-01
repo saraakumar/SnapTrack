@@ -404,6 +404,13 @@
             color: var(--ink);
         }
 
+        /* Item nutrition grounded in the USDA database rather than estimated */
+        .chip-usda {
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 700;
+        }
+
         .preview-image {
             width: 100%;
             border-radius: 16px;
@@ -2117,6 +2124,7 @@
                         ${hasNutrition ? `
                         <div class="nutrition-row">
                             <div class="nutrition-chip"><strong>${Math.round(shown.calories)}</strong> kcal</div>
+                            ${item.type === 'usda' ? `<div class="nutrition-chip chip-usda" title="${(item.usda_match || '').replace(/"/g, '&quot;')}">USDA ✓</div>` : ''}
                             ${shown.protein_g != null ? `<div class="nutrition-chip"><strong>${shown.protein_g}g</strong> protein</div>` : ''}
                             ${shown.carbs_g != null ? `<div class="nutrition-chip"><strong>${shown.carbs_g}g</strong> carbs</div>` : ''}
                             ${shown.fat_g != null ? `<div class="nutrition-chip"><strong>${shown.fat_g}g</strong> fat</div>` : ''}

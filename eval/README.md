@@ -35,19 +35,23 @@ one photo every few seconds.
 
 ## Results so far (Aug 2026, 50 Nutrition5k dishes, gemini-3.1-flash-lite)
 
-| | Baseline prompt | + mass-first estimation |
+| Calorie MAPE | Result | What changed |
 |---|---|---|
-| Calorie MAPE | 35.6% | 33.4% |
-| Bias on dishes <200 kcal | +25.7% | **−1.5%** |
-| Bias on dishes ≥400 kcal | −10.1% | −12.1% |
-| Fat MAPE | 177% | **47%** |
+| Baseline prompt | 35.6% | — |
+| + mass-first estimation | 33.4% | light-dish bias +25.7%→−1.5%, fat MAPE 177%→47% |
+| + median-of-3 ensemble | 32.2% | not worth 3× cost — error is systematic, not sampling noise |
+| + USDA grounding, naive | 40.0% | REGRESSION: composite dishes priced as their densest ingredient ("caesar salad" × pure-dressing density) |
+| + USDA grounding, composite-guarded | 33.4% | fixes extreme dense-food misses (792-kcal chia bowl: 80%→25% err) but net-neutral overall |
 
-Error analysis showed the baseline regressed toward "typical meal" calories
-(over-predicting light plates, under-predicting dense ones). Rewriting the
-prompt to estimate grams first, multiply by energy density, and explicitly
-permit extreme values eliminated the light-dish bias and fixed fat estimation;
-remaining calorie error is mostly per-dish scatter. Ground truth via
-`fetch_nutrition5k.py` (Nutrition5k: real dishes, per-ingredient scale weights).
+Takeaways: the model's dominant error was central-tendency bias (fixed via
+prompt); remaining error is per-dish portion/identity scatter that neither
+ensembling nor database grounding removes on net. Grounding (Gemini does
+perception — food identity + grams; local USDA SR Legacy SQLite supplies
+per-100g facts when a confident single-food match exists) is kept for its
+tail behavior and provenance ("USDA ✓" items), with guardrails: match-overlap
+threshold, wrong-preparation and wrong-identity penalties, composite-dish
+exclusion. Ground truth via `fetch_nutrition5k.py` (real dishes,
+per-ingredient scale weights).
 
 For context: nutrition-estimation literature generally considers ±20%
 good for photo-based estimation — even human dietitians often miss by that

@@ -13,6 +13,8 @@ from google import genai
 from google.genai import types
 from PIL import Image
 
+from nutrition import usda
+
 load_dotenv()
 
 # Postgres in production (DATABASE_URL set, e.g. Neon), SQLite for local dev
@@ -164,6 +166,12 @@ CRITICAL RULES:
    nut butters) pack hundreds of kcal into a small volume - do not deflate them.
 7. Distinguish look-alikes that differ hugely in calories: egg whites vs whole eggs, dressed vs
    undressed salad, oil-glossed vs dry-cooked vegetables. When such a detail is visible, use it.
+8. For each item give "usda_name": the plain generic food name plus preparation, the way a
+   nutrition database would list it ("chicken breast grilled", "egg white cooked", "rice white
+   cooked"). No brand names, no adjectives like "delicious", no ingredient lists.
+   IMPORTANT: only for SINGLE foods. If the item is a composite of mixed ingredients (a dressed
+   salad, sandwich, stir-fry, casserole, smoothie), set usda_name to "" - no single database
+   entry can represent it, and your own estimate is better.
 
 Each distinct food item gets its own entry in "items". If the image contains no food,
 return an empty items list and explain what the image shows in "summary"."""
@@ -178,13 +186,15 @@ RESPONSE_SCHEMA = {
                 "properties": {
                     "name": {"type": "string", "description": "detailed description of the food item with visible ingredients"},
                     "portion": {"type": "string", "description": "estimated portion, e.g. '1 whole 12-inch pizza' or '1 cup, approx 150g'"},
+                    "mass_g": {"type": "number", "description": "estimated mass of the visible portion in grams"},
+                    "usda_name": {"type": "string", "description": "plain database-style name with preparation, e.g. 'chicken breast grilled', 'egg white cooked', 'rice brown cooked'"},
                     "calories": {"type": "number"},
                     "protein_g": {"type": "number"},
                     "carbs_g": {"type": "number"},
                     "fat_g": {"type": "number"},
                     "confidence": {"type": "number", "description": "0-100"},
                 },
-                "required": ["name", "portion", "calories", "protein_g", "carbs_g", "fat_g", "confidence"],
+                "required": ["name", "portion", "mass_g", "usda_name", "calories", "protein_g", "carbs_g", "fat_g", "confidence"],
             },
         },
         "summary": {"type": "string", "description": "2-3 sentence description of everything visible in the image"},
@@ -258,6 +268,8 @@ def _run_model(image, prompt):
         detected_items.append({
             'description': item['name'],
             'portion': item.get('portion', ''),
+            'mass_g': _to_number(item.get('mass_g')),
+            'usda_name': (item.get('usda_name') or '').strip(),
             'calories': _to_number(item.get('calories')),
             'protein_g': _to_number(item.get('protein_g')),
             'carbs_g': _to_number(item.get('carbs_g')),
@@ -265,6 +277,8 @@ def _run_model(image, prompt):
             'confidence': _to_number(item.get('confidence')) or 90.0,
             'type': 'gemini',
         })
+
+    _ground_in_usda(detected_items)
 
     totals = {}
     for field in ('calories', 'protein_g', 'carbs_g', 'fat_g'):
@@ -277,6 +291,40 @@ def _run_model(image, prompt):
         'totals': totals,
         'source': 'gemini',
     }
+
+
+# Trust a USDA match only when it covers at least this share of the query
+USDA_MIN_OVERLAP = 0.67
+
+
+def _ground_in_usda(items):
+    """Replace LLM-invented nutrition with USDA facts where a confident match exists.
+
+    The model does perception (identify the food, estimate grams); the USDA
+    database supplies per-100g facts. Items keep the LLM numbers when there is
+    no trustworthy match, and are marked with their source either way.
+    """
+    if not usda.available():
+        return
+    for item in items:
+        mass = item.get('mass_g')
+        query = item.get('usda_name')
+        if not mass or mass <= 0 or not query:
+            continue
+        # Long queries mean the model is describing a composite dish despite
+        # instructions - a single database row would misprice it badly
+        if len(query.split()) > 4 or ' with ' in query.lower():
+            continue
+        match = usda.lookup(query)
+        if not match or match['overlap'] < USDA_MIN_OVERLAP:
+            continue
+        factor = mass / 100.0
+        item['calories'] = round(match['kcal'] * factor, 1)
+        for field in ('protein_g', 'carbs_g', 'fat_g'):
+            if match[field] is not None:
+                item[field] = round(match[field] * factor, 1)
+        item['type'] = 'usda'
+        item['usda_match'] = match['description']
 
 
 def _min_confidence(result):

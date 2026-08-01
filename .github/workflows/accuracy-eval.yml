@@ -1,0 +1,50 @@
+# Accuracy regression gate: runs a 10-dish Nutrition5k eval against the real
+# analysis pipeline on every PR that touches it, and fails if calorie error
+# regresses past the threshold.
+#
+# Requires a GEMINI_API_KEY repository secret (Settings > Secrets > Actions).
+name: accuracy-eval
+
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'nutrition/**'
+      - 'eval/**'
+      - '.github/workflows/accuracy-eval.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: accuracy-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # Deterministic sample: the fetch script bins dishes by calories and
+      # picks the same 10 every time, so runs are comparable
+      - name: Fetch eval dishes (Nutrition5k)
+        run: python eval/fetch_nutrition5k.py --count 10
+
+      - name: Run accuracy eval
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python eval/run_eval.py eval/manifest.json --fresh --max-mape 45
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval/results/manifest-report.md

@@ -148,6 +148,8 @@ def main():
     parser.add_argument('manifest', help='JSON manifest of photos with known nutrition')
     parser.add_argument('--limit', type=int, help='only evaluate the first N photos')
     parser.add_argument('--fresh', action='store_true', help='re-analyze even if cached')
+    parser.add_argument('--max-mape', type=float,
+                        help='exit non-zero if calorie MAPE exceeds this (for CI regression gates)')
     args = parser.parse_args()
 
     if client is None:
@@ -182,6 +184,10 @@ def main():
     for key, value in summary.items():
         print(f'{key:>22}: {value}')
     print(f'\nFull report: {report_path}')
+
+    if args.max_mape is not None and summary['calorie_mape'] > args.max_mape:
+        raise SystemExit(
+            f"REGRESSION: calorie MAPE {summary['calorie_mape']}% exceeds threshold {args.max_mape}%")
 
 
 if __name__ == '__main__':
