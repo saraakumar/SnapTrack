@@ -45,6 +45,8 @@ uploads/
 !static/manifest.json
 !static/*.png
 !eval/manifest.example.json
+!glasses/*.json
+!glasses/**/*.json
 
 # Eval photos and cached predictions stay local
 eval/photos/

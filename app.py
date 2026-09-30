@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -376,28 +377,45 @@ def api_status():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    """Analyze an uploaded food photo"""
+    """Analyze an uploaded food photo.
+
+    Accepts either multipart/form-data (the web/mobile UI) or a JSON body with
+    a base64 image (the Mentra glasses background script, whose on-device JS
+    runtime has fetch() but no FormData/Blob - see glasses/README.md).
+    """
     if client is None:
         return jsonify({'error': 'GEMINI_API_KEY is not configured on the server. '
                                  'Add it to .env and restart.'}), 503
 
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        image_b64 = data.get('image_base64')
+        if not image_b64:
+            return jsonify({'error': 'No image_base64 provided'}), 400
+        try:
+            image = Image.open(io.BytesIO(base64.b64decode(image_b64)))
+            image.load()
+        except Exception:
+            return jsonify({'error': 'Could not decode that image. Please try another photo.'}), 400
+        correction = (data.get('correction') or '').strip() or None
+    else:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
 
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
 
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Please upload an image (PNG, JPG, JPEG, GIF, WEBP)'}), 400
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Please upload an image (PNG, JPG, JPEG, GIF, WEBP)'}), 400
 
-    try:
-        image = Image.open(file.stream)
-        image.load()
-    except Exception:
-        return jsonify({'error': 'Could not read that file as an image. Please try another photo.'}), 400
+        try:
+            image = Image.open(file.stream)
+            image.load()
+        except Exception:
+            return jsonify({'error': 'Could not read that file as an image. Please try another photo.'}), 400
 
-    correction = (request.form.get('correction') or '').strip() or None
+        correction = (request.form.get('correction') or '').strip() or None
 
     try:
         result = analyze_food(image, correction=correction)

@@ -1,0 +1,145 @@
+/**
+ * Background JSContext entry point. Runs the whole hands-free loop: button
+ * press -> capture -> analyze -> auto-log -> show totals on the HUD.
+ *
+ * The on-device runtime (JavaScriptCore/QuickJS, not Node or a browser) has
+ * fetch() but no FormData/Blob - see two-layer-architecture.md. So the photo
+ * goes to the backend as a JSON body with a base64 image instead of
+ * multipart/form-data; app.py's /upload route accepts either.
+ */
+
+import {registerMiniapp} from "@mentra/miniapp/background"
+import "../shared/channels"
+
+// Point this at your deployed SnapTrack backend. X-App-Key authenticates
+// machine clients the same way the mobile web app's fetches do (see
+// app.py's require_access before_request hook).
+//
+// APP_KEY comes from a MENTRA_PUBLIC_* env var, inlined into the bundle at
+// build time (see build.ts) - copy .env.example to .env and fill in the
+// real value there. .env is gitignored; never hardcode the real password
+// here, since this repo is public. This is still a hobby-project tradeoff
+// (the built bundle itself contains the plaintext key) - if you ever
+// distribute this miniapp beyond your own glasses, put APP_KEY behind a
+// real per-user login instead.
+const BACKEND_URL = "https://snaptrack-td9s.onrender.com"
+const APP_KEY = process.env.MENTRA_PUBLIC_APP_KEY ?? ""
+
+// Render's free tier spins down when idle (~50s cold start) - give the
+// upload enough room to survive that plus the Gemini analysis call itself.
+const UPLOAD_TIMEOUT_MS = 75_000
+
+function mealTypeForNow(): string {
+  const h = new Date().getHours()
+  if (h >= 4 && h < 11) return "Breakfast"
+  if (h >= 11 && h < 16) return "Lunch"
+  if (h >= 16 && h < 22) return "Dinner"
+  return "Snack"
+}
+
+// btoa(String.fromCharCode(...bytes)) blows the call stack on anything but
+// tiny arrays; chunk it the way large-typed-array base64 encoding usually is.
+function toBase64(bytes: Uint8Array): string {
+  const CHUNK = 0x8000
+  let binary = ""
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+registerMiniapp(async (session) => {
+  function showText(text: string) {
+    const d = session.capabilities?.display
+    void session.display.render([
+      {
+        type: "text",
+        id: "status",
+        box: {x: 0, y: 0, w: d?.width ?? 576, h: d?.height ?? 288},
+        text,
+      },
+    ])
+  }
+
+  async function captureAndLog() {
+    showText("Snapping photo...")
+
+    let photo: {photoUrl: string; mimeType?: string}
+    try {
+      photo = await session.camera.takePhoto({size: "medium"})
+    } catch {
+      showText("Camera failed - try again")
+      return
+    }
+
+    showText("Analyzing...\n(first request after idle can take ~1 min)")
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+    try {
+      const photoResponse = await fetch(photo.photoUrl, {signal: controller.signal})
+      const bytes = new Uint8Array(await photoResponse.arrayBuffer())
+
+      const analysis = await fetch(`${BACKEND_URL}/upload`, {
+        method: "POST",
+        headers: {"X-App-Key": APP_KEY, "Content-Type": "application/json"},
+        body: JSON.stringify({
+          image_base64: toBase64(bytes),
+          mime_type: photo.mimeType || "image/jpeg",
+        }),
+        signal: controller.signal,
+      }).then((r) => r.json())
+
+      if (analysis.error) {
+        showText(`Analysis failed:\n${analysis.error}`)
+        return
+      }
+      if (!analysis.items?.length) {
+        showText("No food detected.\nTry a clearer photo.")
+        return
+      }
+
+      const totals = analysis.totals || {}
+      const headline = totals.calories != null ? `${Math.round(totals.calories)} kcal` : "Logged"
+      const macros = [
+        totals.protein_g != null ? `${Math.round(totals.protein_g)}p` : null,
+        totals.carbs_g != null ? `${Math.round(totals.carbs_g)}c` : null,
+        totals.fat_g != null ? `${Math.round(totals.fat_g)}f` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+      const topItem = analysis.items[0]?.description ?? ""
+
+      showText([headline, macros, topItem].filter(Boolean).join("\n"))
+
+      // Auto-log so the hands-free loop takes zero taps; the phone app can
+      // still adjust portions or delete the entry afterward.
+      await fetch(`${BACKEND_URL}/api/meals`, {
+        method: "POST",
+        headers: {"X-App-Key": APP_KEY, "Content-Type": "application/json"},
+        body: JSON.stringify({
+          items: analysis.items,
+          totals: analysis.totals,
+          summary: analysis.full_description,
+          meal_type: mealTypeForNow(),
+        }),
+      })
+    } catch (e) {
+      const timedOut = e instanceof Error && e.name === "AbortError"
+      showText(timedOut ? "Timed out - check connection\nand try again" : "Something went wrong")
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  if (!APP_KEY) {
+    showText("Setup needed:\nset MENTRA_PUBLIC_APP_KEY\nin glasses/.env, then rebuild")
+    return
+  }
+
+  showText("Press the button\nto snap a meal")
+  session.input.onButtonPress(() => {
+    void captureAndLog()
+  })
+})
