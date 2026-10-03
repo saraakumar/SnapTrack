@@ -411,6 +411,62 @@
             font-weight: 700;
         }
 
+        .correction-hint {
+            background: var(--accent-soft);
+            color: var(--ink);
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 0.82em;
+            margin-top: 10px;
+        }
+
+        .correction-hint strong {
+            color: var(--accent);
+        }
+
+        .hint-apply {
+            background: none;
+            border: none;
+            color: var(--amber);
+            font-weight: 700;
+            font-size: 0.85em;
+            cursor: pointer;
+            margin-left: 4px;
+            padding: 0;
+        }
+
+        .correction-pattern {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-top: 1px solid var(--line);
+            font-size: 0.85em;
+        }
+
+        .correction-pattern:first-of-type {
+            border-top: none;
+        }
+
+        .correction-pattern .fix {
+            color: var(--ink-soft);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .correction-pattern .fix strong {
+            color: var(--ink);
+            font-weight: 700;
+        }
+
+        .correction-pattern .count {
+            color: var(--ink-soft);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
         .preview-image {
             width: 100%;
             border-radius: 16px;
@@ -1090,6 +1146,7 @@
                 <div class="chart-title">Pipeline health</div>
                 <div class="chart-sub">Last <span id="pipelineCount">0</span> analysis requests</div>
                 <div class="stat-grid" id="pipelineGrid"></div>
+                <div id="topCorrections"></div>
             </div>
         </div>
 
@@ -1272,12 +1329,15 @@
 
         analyzeBtn.addEventListener('click', () => runAnalysis());
 
-        async function runAnalysis(correction) {
+        async function runAnalysis(originalDescription, correctedDescription) {
             if (!selectedFile) return;
 
             const formData = new FormData();
             formData.append('file', selectedFile);
-            if (correction) formData.append('correction', correction);
+            if (correctedDescription) {
+                formData.append('original_description', originalDescription || '');
+                formData.append('corrected_description', correctedDescription);
+            }
 
             loading.style.display = 'block';
             error.style.display = 'none';
@@ -1823,6 +1883,33 @@
                 grid.appendChild(statTile('Error rate', s.error_rate ?? '–', '%'));
                 grid.appendChild(statTile('Retry rate', s.retry_rate ?? '–', '% (low confidence)'));
                 grid.appendChild(statTile('User corrections', s.correction_rate ?? '–', '% of requests'));
+
+                const topDiv = document.getElementById('topCorrections');
+                topDiv.innerHTML = '';
+                if (s.top_corrections && s.top_corrections.length) {
+                    const heading = document.createElement('div');
+                    heading.className = 'chart-sub';
+                    heading.style.marginTop = '14px';
+                    heading.textContent = 'Frequently corrected';
+                    topDiv.appendChild(heading);
+                    s.top_corrections.forEach(c => {
+                        const row = document.createElement('div');
+                        row.className = 'correction-pattern';
+                        const fix = document.createElement('span');
+                        fix.className = 'fix';
+                        fix.appendChild(document.createTextNode(c.original + ' → '));
+                        const strong = document.createElement('strong');
+                        strong.textContent = c.corrected;
+                        fix.appendChild(strong);
+                        const count = document.createElement('span');
+                        count.className = 'count';
+                        count.textContent = `×${c.count}`;
+                        row.appendChild(fix);
+                        row.appendChild(count);
+                        topDiv.appendChild(row);
+                    });
+                }
+
                 card.style.display = 'block';
             } catch (e) {
                 card.style.display = 'none';
@@ -2182,6 +2269,11 @@
                             ${PORTION_SCALES.map(p =>
                                 `<button data-scale="${p.value}" class="${p.value === scale ? 'active' : ''}">${p.label}</button>`).join('')}
                         </div>` : ''}
+                        ${item.correction_hint ? `
+                        <div class="correction-hint">
+                            You often correct this to <strong>${item.correction_hint}</strong>.
+                            <button class="hint-apply" data-index="${index}">Apply</button>
+                        </div>` : ''}
                         <button class="food-edit" data-index="${index}">Not right? Edit</button>
                         <div class="edit-row" data-index="${index}">
                             <input type="text" placeholder="What is this food actually?" value="${item.description.replace(/"/g, '&quot;')}">
@@ -2215,8 +2307,15 @@
                     const row = results.querySelector(`.edit-row[data-index="${btn.dataset.index}"]`);
                     const corrected = row.querySelector('input').value.trim();
                     if (corrected && corrected !== item.description) {
-                        runAnalysis(`The item "${item.description}" is actually: ${corrected}`);
+                        runAnalysis(item.description, corrected);
                     }
+                });
+            });
+
+            results.querySelectorAll('.hint-apply').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const item = data.items[btn.dataset.index];
+                    runAnalysis(item.description, item.correction_hint);
                 });
             });
         }

@@ -255,6 +255,71 @@ def _is_rate_limit(error):
     return '429' in text or 'RESOURCE_EXHAUSTED' in text
 
 
+_correction_hint_cache = {'key': None, 'hints': None}
+
+# A one-off edit doesn't mean much; the same correction happening twice does
+MIN_CORRECTION_PATTERN_COUNT = 2
+
+
+def _correction_hints():
+    """Foods the model has misidentified the same way more than once, mapped
+    to what the user corrected them to. Rebuilt whenever the corrections
+    table grows, otherwise served from cache."""
+    with get_db() as db:
+        rows = db.execute('SELECT original_description, corrected_description FROM corrections').fetchall()
+
+    cache_key = len(rows)
+    if _correction_hint_cache['key'] == cache_key:
+        return _correction_hint_cache['hints']
+
+    groups = {}
+    for r in rows:
+        key = r['original_description'].strip().lower()
+        groups.setdefault(key, []).append(r['corrected_description'].strip())
+
+    hints = {}
+    for key, corrected_list in groups.items():
+        if len(corrected_list) < MIN_CORRECTION_PATTERN_COUNT:
+            continue
+        counts = {}
+        for c in corrected_list:
+            counts[c] = counts.get(c, 0) + 1
+        most_common = max(counts, key=counts.get)
+        hints[key] = {'corrected': most_common, 'count': len(corrected_list)}
+
+    _correction_hint_cache['key'] = cache_key
+    _correction_hint_cache['hints'] = hints
+    return hints
+
+
+def _apply_correction_hints(items):
+    """Flag items matching a known misidentification pattern so the UI can
+    offer a one-tap fix instead of making the user type the correction again."""
+    hints = _correction_hints()
+    if not hints:
+        return
+    for item in items:
+        hint = hints.get(item['description'].strip().lower())
+        if hint:
+            item['correction_hint'] = hint['corrected']
+            item['confidence'] = min(item.get('confidence') or 90.0, 70.0)
+
+
+def _record_correction(original, corrected):
+    original = (original or '').strip()
+    corrected = (corrected or '').strip()
+    if not original or not corrected or original.lower() == corrected.lower():
+        return
+    try:
+        with get_db() as db:
+            db.execute(q(
+                'INSERT INTO corrections (created_at, original_description, corrected_description) '
+                'VALUES (?, ?, ?)'),
+                (datetime.now().isoformat(timespec='seconds'), original, corrected))
+    except Exception as e:
+        app.logger.warning(f"Failed to record correction: {e}")
+
+
 def _run_model(image, prompt):
     """Run one Gemini analysis pass and return the parsed result dict"""
     response = None
@@ -303,6 +368,7 @@ def _run_model(image, prompt):
             'type': 'gemini',
         })
 
+    _apply_correction_hints(detected_items)
     _ground_in_usda(detected_items)
 
     totals = {}
@@ -453,7 +519,9 @@ def upload_file():
             image.load()
         except Exception:
             return jsonify({'error': 'Could not decode that image. Please try another photo.'}), 400
-        correction = (data.get('correction') or '').strip() or None
+        original_description = (data.get('original_description') or '').strip()
+        corrected_description = (data.get('corrected_description') or '').strip()
+        correction = corrected_description or (data.get('correction') or '').strip() or None
     else:
         if 'file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -471,12 +539,15 @@ def upload_file():
         except Exception:
             return jsonify({'error': 'Could not read that file as an image. Please try another photo.'}), 400
 
-        correction = (request.form.get('correction') or '').strip() or None
+        original_description = (request.form.get('original_description') or '').strip()
+        corrected_description = (request.form.get('corrected_description') or '').strip()
+        correction = corrected_description or (request.form.get('correction') or '').strip() or None
 
     start = time.perf_counter()
     try:
         result = analyze_food(image, correction=correction)
         _log_analysis_request((time.perf_counter() - start) * 1000, bool(correction), result=result)
+        _record_correction(original_description, corrected_description)
         return jsonify({
             'success': True,
             'items': result['items'],
@@ -675,6 +746,18 @@ def pipeline_stats():
         if r['model']:
             model_counts[r['model']] = model_counts.get(r['model'], 0) + 1
 
+    with get_db() as db:
+        correction_rows = db.execute(
+            'SELECT original_description, corrected_description FROM corrections').fetchall()
+    pattern_counts, pattern_fix = {}, {}
+    for r in correction_rows:
+        key = r['original_description'].strip().lower()
+        pattern_counts[key] = pattern_counts.get(key, 0) + 1
+        pattern_fix[key] = r['corrected_description']
+    top_corrections = sorted(
+        ({'original': k, 'corrected': pattern_fix[k], 'count': c} for k, c in pattern_counts.items() if c >= 2),
+        key=lambda p: -p['count'])[:5]
+
     return jsonify({
         'count': len(rows),
         'error_rate': round(100 * len(errors) / len(rows), 1),
@@ -684,6 +767,7 @@ def pipeline_stats():
         'latency_p50_ms': round(_percentile(latencies, 0.5)) if latencies else None,
         'latency_p95_ms': round(_percentile(latencies, 0.95)) if latencies else None,
         'model_counts': model_counts,
+        'top_corrections': top_corrections,
     })
 
 
