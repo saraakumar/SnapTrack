@@ -1085,6 +1085,12 @@
                 Log a few meals and your trends will show up here.
             </div>
             <table class="sr-only" id="trendsTable"></table>
+
+            <div class="chart-card" id="pipelineCard" style="display: none;">
+                <div class="chart-title">Pipeline health</div>
+                <div class="chart-sub">Last <span id="pipelineCount">0</span> analysis requests</div>
+                <div class="stat-grid" id="pipelineGrid"></div>
+            </div>
         </div>
 
         <!-- Meal detail modal -->
@@ -1779,6 +1785,48 @@
             } catch (e) { /* chart whatever we already have */ }
             renderTrends();
             loadInsight();
+            loadPipelineStats();
+        }
+
+        function statTile(label, value, unit) {
+            const tile = document.createElement('div');
+            tile.className = 'stat-tile';
+            const labelEl = document.createElement('div');
+            labelEl.className = 'stat-label';
+            labelEl.textContent = label;
+            const valueEl = document.createElement('div');
+            valueEl.className = 'stat-value';
+            valueEl.textContent = value + ' ';
+            const unitEl = document.createElement('small');
+            unitEl.textContent = unit;
+            valueEl.appendChild(unitEl);
+            tile.appendChild(labelEl);
+            tile.appendChild(valueEl);
+            return tile;
+        }
+
+        async function loadPipelineStats() {
+            const card = document.getElementById('pipelineCard');
+            try {
+                const response = await fetch('/api/pipeline-stats');
+                const s = await response.json();
+                if (!s.count) {
+                    card.style.display = 'none';
+                    return;
+                }
+                document.getElementById('pipelineCount').textContent = s.count;
+                const grid = document.getElementById('pipelineGrid');
+                grid.innerHTML = '';
+                grid.appendChild(statTile('Latency p50', s.latency_p50_ms ?? '–', 'ms'));
+                grid.appendChild(statTile('Latency p95', s.latency_p95_ms ?? '–', 'ms'));
+                grid.appendChild(statTile('USDA-grounded', s.grounding_rate ?? '–', '% of items'));
+                grid.appendChild(statTile('Error rate', s.error_rate ?? '–', '%'));
+                grid.appendChild(statTile('Retry rate', s.retry_rate ?? '–', '% (low confidence)'));
+                grid.appendChild(statTile('User corrections', s.correction_rate ?? '–', '% of requests'));
+                card.style.display = 'block';
+            } catch (e) {
+                card.style.display = 'none';
+            }
         }
 
         async function loadInsight() {

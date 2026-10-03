@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import math
 import os
 import sqlite3
 import time
@@ -69,6 +70,29 @@ def init_db():
             cols = [r[1] for r in db.execute('PRAGMA table_info(meals)').fetchall()]
             if 'meal_type' not in cols:
                 db.execute('ALTER TABLE meals ADD COLUMN meal_type TEXT')
+
+        db.execute(f'''
+            CREATE TABLE IF NOT EXISTS analysis_requests (
+                id {id_col},
+                created_at TEXT NOT NULL,
+                model TEXT,
+                retried INTEGER NOT NULL DEFAULT 0,
+                had_correction INTEGER NOT NULL DEFAULT 0,
+                latency_ms REAL,
+                item_count INTEGER,
+                grounded_count INTEGER,
+                min_confidence REAL,
+                error TEXT
+            )
+        ''')
+        db.execute(f'''
+            CREATE TABLE IF NOT EXISTS corrections (
+                id {id_col},
+                created_at TEXT NOT NULL,
+                original_description TEXT NOT NULL,
+                corrected_description TEXT NOT NULL
+            )
+        ''')
 
 
 init_db()
@@ -291,6 +315,7 @@ def _run_model(image, prompt):
         'full_description': parsed.get('summary', ''),
         'totals': totals,
         'source': 'gemini',
+        'model': model_name,
     }
 
 
@@ -333,6 +358,33 @@ def _min_confidence(result):
     return min(scores) if scores else 0
 
 
+def _log_analysis_request(latency_ms, had_correction, result=None, error=None):
+    """Record one /upload call for the pipeline dashboard.
+
+    Never allowed to break the actual response - a logging failure here
+    is swallowed, not raised, since observability must not take down the
+    feature it's observing.
+    """
+    try:
+        items = result['items'] if result else []
+        with get_db() as db:
+            db.execute(q(
+                'INSERT INTO analysis_requests '
+                '(created_at, model, retried, had_correction, latency_ms, item_count, grounded_count, min_confidence, error) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+                (datetime.now().isoformat(timespec='seconds'),
+                 result.get('model') if result else None,
+                 int(bool(result.get('retried'))) if result else 0,
+                 int(bool(had_correction)),
+                 latency_ms,
+                 len(items),
+                 sum(1 for i in items if i.get('type') == 'usda'),
+                 _min_confidence(result) if items else None,
+                 error))
+    except Exception as e:
+        app.logger.warning(f"Failed to log analysis request: {e}")
+
+
 def analyze_food(image, correction=None):
     """Analyze a meal photo; optionally honor a user correction of the identification.
 
@@ -349,13 +401,17 @@ def analyze_food(image, correction=None):
         )
 
     result = _run_model(image, prompt)
+    result['retried'] = False
 
     if not correction and result['items'] and _min_confidence(result) < 90:
         app.logger.info("Low confidence result, re-running analysis once")
         try:
             second = _run_model(image, prompt)
             if _min_confidence(second) > _min_confidence(result):
+                second['retried'] = True
                 result = second
+            else:
+                result['retried'] = True
         except Exception as e:
             app.logger.warning(f"Confidence retry failed, keeping first result: {e}")
 
@@ -417,8 +473,10 @@ def upload_file():
 
         correction = (request.form.get('correction') or '').strip() or None
 
+    start = time.perf_counter()
     try:
         result = analyze_food(image, correction=correction)
+        _log_analysis_request((time.perf_counter() - start) * 1000, bool(correction), result=result)
         return jsonify({
             'success': True,
             'items': result['items'],
@@ -428,6 +486,7 @@ def upload_file():
             'source': result['source'],
         })
     except Exception as e:
+        _log_analysis_request((time.perf_counter() - start) * 1000, bool(correction), error=str(e))
         app.logger.error(f"Analysis failed: {e}")
         return jsonify({'error': f'Image analysis failed: {e}'}), 502
 
@@ -580,6 +639,52 @@ no generic platitudes like "keep it up", no lecturing about health."""
     except Exception as e:
         app.logger.warning(f"Weekly insight generation failed: {e}")
         return jsonify({'message': None})
+
+
+def _percentile(sorted_values, pct):
+    """Linear-interpolated percentile of an already-sorted list"""
+    if not sorted_values:
+        return None
+    k = (len(sorted_values) - 1) * pct
+    lo, hi = math.floor(k), math.ceil(k)
+    if lo == hi:
+        return sorted_values[int(k)]
+    return sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * (k - lo)
+
+
+@app.route('/api/pipeline-stats')
+def pipeline_stats():
+    """Aggregate recent /upload requests: latency, errors, retries, USDA
+    grounding rate, and correction rate - the health of the analysis
+    pipeline itself, not of any one meal."""
+    with get_db() as db:
+        rows = db.execute(
+            'SELECT * FROM analysis_requests ORDER BY created_at DESC LIMIT 500').fetchall()
+
+    if not rows:
+        return jsonify({'count': 0})
+
+    successes = [r for r in rows if not r['error']]
+    errors = [r for r in rows if r['error']]
+    latencies = sorted(r['latency_ms'] for r in rows if r['latency_ms'] is not None)
+    item_total = sum(r['item_count'] or 0 for r in successes)
+    grounded_total = sum(r['grounded_count'] or 0 for r in successes)
+
+    model_counts = {}
+    for r in successes:
+        if r['model']:
+            model_counts[r['model']] = model_counts.get(r['model'], 0) + 1
+
+    return jsonify({
+        'count': len(rows),
+        'error_rate': round(100 * len(errors) / len(rows), 1),
+        'retry_rate': round(100 * sum(r['retried'] for r in successes) / len(successes), 1) if successes else None,
+        'correction_rate': round(100 * sum(r['had_correction'] for r in rows) / len(rows), 1),
+        'grounding_rate': round(100 * grounded_total / item_total, 1) if item_total else None,
+        'latency_p50_ms': round(_percentile(latencies, 0.5)) if latencies else None,
+        'latency_p95_ms': round(_percentile(latencies, 0.95)) if latencies else None,
+        'model_counts': model_counts,
+    })
 
 
 @app.route('/api/meals', methods=['POST'])
