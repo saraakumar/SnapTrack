@@ -320,8 +320,9 @@ def _record_correction(original, corrected):
         app.logger.warning(f"Failed to record correction: {e}")
 
 
-def _run_model(image, prompt):
-    """Run one Gemini analysis pass and return the parsed result dict"""
+def _run_model(contents):
+    """Run one Gemini analysis pass over `contents` (a prompt, or [prompt, image])
+    and return the parsed result dict. Shared by the photo and text-only paths."""
     response = None
     last_error = None
     for model_name in MODEL_CANDIDATES:
@@ -331,7 +332,7 @@ def _run_model(image, prompt):
         try:
             response = client.models.generate_content(
                 model=model_name,
-                contents=[prompt, image],
+                contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type='application/json',
                     response_schema=RESPONSE_SCHEMA,
@@ -466,13 +467,13 @@ def analyze_food(image, correction=None):
             "details the user did not specify, and estimate nutrition for what the user says it is."
         )
 
-    result = _run_model(image, prompt)
+    result = _run_model([prompt, image])
     result['retried'] = False
 
     if not correction and result['items'] and _min_confidence(result) < 90:
         app.logger.info("Low confidence result, re-running analysis once")
         try:
-            second = _run_model(image, prompt)
+            second = _run_model([prompt, image])
             if _min_confidence(second) > _min_confidence(result):
                 second['retried'] = True
                 result = second
@@ -481,6 +482,33 @@ def analyze_food(image, correction=None):
         except Exception as e:
             app.logger.warning(f"Confidence retry failed, keeping first result: {e}")
 
+    return result
+
+
+TEXT_ANALYSIS_PROMPT = """You are a food identification and nutrition expert. The user describes a \
+meal in their own words, with no photo. Estimate its nutrition the same careful way you would from \
+a photo:
+
+1. Identify each distinct food item the description implies.
+2. Estimate each item's MASS in grams from the description (typical serving sizes, explicit
+   quantities if given, e.g. "2 eggs" or "a cup of rice").
+3. Compute calories as mass x that food's typical energy density (kcal per 100g) - don't shortcut
+   to a flat "typical serving" calorie count.
+4. Commit to realistic values; don't pull everything toward an average meal.
+5. For each item give "usda_name": the plain generic food name plus preparation, the way a
+   nutrition database would list it ("chicken breast grilled", "egg white cooked"). No brand
+   names. Only for SINGLE foods - set to "" for composite/mixed dishes.
+
+If the description is too vague to identify any food, return an empty items list and explain why
+in "summary"."""
+
+
+def analyze_text_food(description):
+    """Estimate nutrition from a plain-text meal description (no photo) - used
+    by the chat assistant's log-a-meal tool."""
+    prompt = f'{TEXT_ANALYSIS_PROMPT}\n\nMeal description: "{description}"'
+    result = _run_model([prompt])
+    result['retried'] = False
     return result
 
 
@@ -771,6 +799,38 @@ def pipeline_stats():
     })
 
 
+def _meal_type_for_now():
+    h = datetime.now().hour
+    if 4 <= h < 11:
+        return 'Breakfast'
+    if 11 <= h < 16:
+        return 'Lunch'
+    if 16 <= h < 22:
+        return 'Dinner'
+    return 'Snack'
+
+
+def _insert_meal(items, totals, summary='', thumbnail=None, meal_type=None):
+    """Shared by the /api/meals route and the chat assistant's log tool"""
+    if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
+        meal_type = None
+    created_at = datetime.now().isoformat(timespec='seconds')
+    sql = ('INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type) '
+           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    params = (created_at, summary, json.dumps(items),
+              totals.get('calories'), totals.get('protein_g'),
+              totals.get('carbs_g'), totals.get('fat_g'),
+              thumbnail, meal_type)
+    with get_db() as db:
+        if IS_POSTGRES:
+            cur = db.execute(q(sql + ' RETURNING id'), params)
+            meal_id = cur.fetchone()['id']
+        else:
+            cur = db.execute(sql, params)
+            meal_id = cur.lastrowid
+    return meal_id, created_at
+
+
 @app.route('/api/meals', methods=['POST'])
 def log_meal():
     """Save an analyzed meal to the log"""
@@ -779,24 +839,9 @@ def log_meal():
     if not items:
         return jsonify({'error': 'Nothing to log'}), 400
 
-    totals = data.get('totals') or {}
-    meal_type = data.get('meal_type')
-    if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
-        meal_type = None
-    created_at = datetime.now().isoformat(timespec='seconds')
-    sql = ('INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type) '
-           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    params = (created_at, data.get('summary', ''), json.dumps(items),
-              totals.get('calories'), totals.get('protein_g'),
-              totals.get('carbs_g'), totals.get('fat_g'),
-              data.get('thumbnail'), meal_type)
-    with get_db() as db:
-        if IS_POSTGRES:
-            cur = db.execute(q(sql + ' RETURNING id'), params)
-            meal_id = cur.fetchone()['id']
-        else:
-            cur = db.execute(sql, params)
-            meal_id = cur.lastrowid
+    meal_id, created_at = _insert_meal(
+        items, data.get('totals') or {}, data.get('summary', ''),
+        data.get('thumbnail'), data.get('meal_type'))
     return jsonify({'success': True, 'id': meal_id, 'created_at': created_at})
 
 
@@ -848,19 +893,239 @@ def get_goals():
     return jsonify(_get_goals())
 
 
-@app.route('/api/goals', methods=['POST'])
-def set_goals():
-    data = request.get_json(silent=True) or {}
+def _set_goals(calorie_goal=None, protein_goal=None):
+    """Shared by the /api/goals route and the chat assistant's set_goals tool"""
     upsert = ('INSERT INTO settings (key, value) VALUES (?, ?) '
               'ON CONFLICT (key) DO UPDATE SET value = excluded.value')
     with get_db() as db:
-        for key in ('calorie_goal', 'protein_goal'):
-            value = _to_number(data.get(key))
+        for key, raw in (('calorie_goal', calorie_goal), ('protein_goal', protein_goal)):
+            value = _to_number(raw)
             if value and value > 0:
                 db.execute(q(upsert), (key, str(value)))
             else:
                 db.execute(q('DELETE FROM settings WHERE key = ?'), (key,))
-    return jsonify({'success': True, **_get_goals()})
+    return _get_goals()
+
+
+@app.route('/api/goals', methods=['POST'])
+def set_goals():
+    data = request.get_json(silent=True) or {}
+    return jsonify({'success': True, **_set_goals(data.get('calorie_goal'), data.get('protein_goal'))})
+
+
+# ---------- Chat assistant ----------
+# A real function-calling loop grounded in the app's own data, not a wrapper
+# around a static prompt: the model can see actual meals/goals and log new
+# ones, through the same DB helpers the REST routes use.
+
+CHAT_TOOLS = [
+    types.FunctionDeclaration(
+        name='get_daily_totals',
+        description="Get the user's daily nutrition totals (calories, protein, carbs, fat) for "
+                    "each of the last N days, most recent first. Use for trend/average questions "
+                    "or 'how much X have I eaten' over a period.",
+        parameters={
+            'type': 'object',
+            'properties': {'days': {'type': 'integer', 'description': 'how many days back, 1-30'}},
+            'required': ['days'],
+        },
+    ),
+    types.FunctionDeclaration(
+        name='get_meal_log',
+        description="Get the user's individual logged meals for the last N days - what they ate, "
+                    "when, and its nutrition. Use for questions about specific meals.",
+        parameters={
+            'type': 'object',
+            'properties': {'days': {'type': 'integer', 'description': 'how many days back, 1-14'}},
+            'required': ['days'],
+        },
+    ),
+    types.FunctionDeclaration(
+        name='get_goals',
+        description="Get the user's current daily calorie and protein goals, if any are set.",
+        parameters={'type': 'object', 'properties': {}},
+    ),
+    types.FunctionDeclaration(
+        name='set_goals',
+        description="Set the user's daily calorie and/or protein goal. Omit a field to leave it unchanged.",
+        parameters={
+            'type': 'object',
+            'properties': {
+                'calorie_goal': {'type': 'number', 'description': 'daily calorie goal in kcal'},
+                'protein_goal': {'type': 'number', 'description': 'daily protein goal in grams'},
+            },
+        },
+    ),
+    types.FunctionDeclaration(
+        name='log_meal_from_text',
+        description="Analyze a meal the user describes in words (no photo) and log it to their "
+                    "food diary. Use whenever the user describes something they ate and wants it tracked.",
+        parameters={
+            'type': 'object',
+            'properties': {
+                'description': {'type': 'string', 'description': 'what they ate, in their words'},
+                'meal_type': {'type': 'string', 'enum': ['Breakfast', 'Lunch', 'Dinner', 'Snack'],
+                              'description': 'omit to infer from the current time'},
+            },
+            'required': ['description'],
+        },
+    ),
+]
+
+
+def _tool_get_daily_totals(days=7):
+    days = max(1, min(int(days or 7), 30))
+    since = (datetime.now() - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    with get_db() as db:
+        rows = db.execute(q('SELECT * FROM meals WHERE created_at >= ? ORDER BY created_at'), (since,)).fetchall()
+    by_day = {}
+    for r in rows:
+        day = r['created_at'][:10]
+        totals = by_day.setdefault(day, {'calories': 0, 'protein_g': 0, 'carbs_g': 0, 'fat_g': 0, 'meals': 0})
+        totals['calories'] += r['calories'] or 0
+        totals['protein_g'] += r['protein_g'] or 0
+        totals['carbs_g'] += r['carbs_g'] or 0
+        totals['fat_g'] += r['fat_g'] or 0
+        totals['meals'] += 1
+    return {'daily_totals': [
+        {'date': day, **{k: round(v, 1) for k, v in totals.items()}}
+        for day, totals in sorted(by_day.items(), reverse=True)
+    ]}
+
+
+def _tool_get_meal_log(days=3):
+    days = max(1, min(int(days or 3), 14))
+    since = (datetime.now() - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    with get_db() as db:
+        rows = db.execute(
+            q('SELECT * FROM meals WHERE created_at >= ? ORDER BY created_at DESC LIMIT 60'),
+            (since,)).fetchall()
+    meals = []
+    for r in rows:
+        items = json.loads(r['items'])
+        name = items[0]['description'] if items else (r['summary'] or 'meal')
+        meals.append({
+            'date': r['created_at'][:10], 'time': r['created_at'][11:16],
+            'meal_type': r['meal_type'], 'description': name,
+            'calories': r['calories'], 'protein_g': r['protein_g'],
+            'carbs_g': r['carbs_g'], 'fat_g': r['fat_g'],
+        })
+    return {'meals': meals}
+
+
+def _tool_set_goals(calorie_goal=None, protein_goal=None):
+    # The tool's contract is "omit = unchanged"; /api/goals's is "omit =
+    # clear" (right for its form, which always sends both fields). Merge
+    # with the current values here rather than change that route's semantics.
+    current = _get_goals()
+    return _set_goals(
+        calorie_goal if calorie_goal is not None else current['calorie_goal'],
+        protein_goal if protein_goal is not None else current['protein_goal'])
+
+
+def _tool_log_meal_from_text(description, meal_type=None):
+    if not description or not description.strip():
+        return {'error': 'No description given'}
+    result = analyze_text_food(description)
+    if not result['items']:
+        return {'error': 'Could not identify any food in that description.',
+                'summary': result['full_description']}
+    if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
+        meal_type = _meal_type_for_now()
+    meal_id, created_at = _insert_meal(result['items'], result['totals'], result['full_description'],
+                                        meal_type=meal_type)
+    return {'logged': True, 'meal_id': meal_id, 'meal_type': meal_type, 'totals': result['totals'],
+            'items': [i['description'] for i in result['items']]}
+
+
+CHAT_TOOL_IMPLS = {
+    'get_daily_totals': lambda args: _tool_get_daily_totals(args.get('days')),
+    'get_meal_log': lambda args: _tool_get_meal_log(args.get('days')),
+    'get_goals': lambda args: _get_goals(),
+    'set_goals': lambda args: _tool_set_goals(args.get('calorie_goal'), args.get('protein_goal')),
+    'log_meal_from_text': lambda args: _tool_log_meal_from_text(args.get('description'), args.get('meal_type')),
+}
+
+CHAT_SYSTEM_PROMPT = """You are SnapTrack's in-app nutrition assistant. You can see the user's \
+real meal log and goals through your tools, and you can log new meals they describe in words. \
+Always call a tool to check real data before answering questions about what they've eaten or \
+their goals - never guess or make up numbers. When you log a meal, confirm what you logged and \
+its totals. Keep replies short (2-4 sentences) and conversational - this is a chat bubble, not a \
+report. No markdown formatting. Today is {now}."""
+
+MAX_CHAT_TOOL_CALLS = 5
+
+
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    """One turn of the nutrition assistant. The client holds conversation
+    history (not persisted server-side) and resends it each call."""
+    if client is None:
+        return jsonify({'error': 'GEMINI_API_KEY is not configured on the server.'}), 503
+
+    data = request.get_json(silent=True) or {}
+    message = (data.get('message') or '').strip()
+    if not message:
+        return jsonify({'error': 'No message provided'}), 400
+
+    contents = []
+    for turn in (data.get('history') or [])[-20:]:
+        role = 'model' if turn.get('role') == 'model' else 'user'
+        text = (turn.get('text') or '').strip()
+        if text:
+            contents.append(types.Content(role=role, parts=[types.Part(text=text)]))
+    contents.append(types.Content(role='user', parts=[types.Part(text=message)]))
+
+    config = types.GenerateContentConfig(
+        system_instruction=CHAT_SYSTEM_PROMPT.format(now=datetime.now().strftime('%A, %Y-%m-%d %H:%M')),
+        tools=[types.Tool(function_declarations=CHAT_TOOLS)],
+    )
+
+    actions = []
+    try:
+        for _ in range(MAX_CHAT_TOOL_CALLS):
+            response = None
+            last_error = None
+            for model_name in MODEL_CANDIDATES:
+                if _model_cooldown_until.get(model_name, 0) > time.time():
+                    continue
+                try:
+                    response = client.models.generate_content(model=model_name, contents=contents, config=config)
+                    break
+                except Exception as e:
+                    last_error = e
+                    if _is_rate_limit(e):
+                        _model_cooldown_until[model_name] = time.time() + RATE_LIMIT_COOLDOWN_SECONDS
+            if response is None:
+                raise last_error or RuntimeError('No model available')
+
+            parts = response.candidates[0].content.parts if response.candidates else []
+            calls = [p.function_call for p in parts if p.function_call]
+
+            if not calls:
+                return jsonify({'message': response.text, 'actions': actions})
+
+            contents.append(response.candidates[0].content)
+            response_parts = []
+            for call in calls:
+                impl = CHAT_TOOL_IMPLS.get(call.name)
+                try:
+                    result = impl(dict(call.args)) if impl else {'error': f'Unknown tool {call.name}'}
+                except Exception as e:
+                    app.logger.warning(f"Chat tool {call.name} failed: {e}")
+                    result = {'error': str(e)}
+                actions.append({'tool': call.name, 'args': dict(call.args)})
+                response_parts.append(types.Part(function_response=types.FunctionResponse(
+                    id=call.id, name=call.name, response=result)))
+            contents.append(types.Content(role='user', parts=response_parts))
+
+        return jsonify({
+            'message': "That took more steps than expected - could you ask more directly?",
+            'actions': actions,
+        })
+    except Exception as e:
+        app.logger.error(f"Chat failed: {e}")
+        return jsonify({'error': f'Chat failed: {e}'}), 502
 
 
 if __name__ == '__main__':
