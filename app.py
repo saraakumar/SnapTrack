@@ -537,8 +537,13 @@ def upload_file():
         return jsonify({'error': 'GEMINI_API_KEY is not configured on the server. '
                                  'Add it to .env and restart.'}), 503
 
-    if request.is_json:
-        data = request.get_json(silent=True) or {}
+    # Prefer a real multipart file when present; otherwise try to parse the
+    # body as JSON regardless of the declared Content-Type. Some embedded JS
+    # runtimes (e.g. the Mentra glasses background JSContext) don't set
+    # Content-Type the way a browser's fetch() does, so request.is_json can't
+    # be trusted here - force=True parses the body as JSON anyway.
+    if 'file' not in request.files:
+        data = request.get_json(silent=True, force=True) or {}
         image_b64 = data.get('image_base64')
         if not image_b64:
             return jsonify({'error': 'No image_base64 provided'}), 400
@@ -551,9 +556,6 @@ def upload_file():
         corrected_description = (data.get('corrected_description') or '').strip()
         correction = corrected_description or (data.get('correction') or '').strip() or None
     else:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-
         file = request.files['file']
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400

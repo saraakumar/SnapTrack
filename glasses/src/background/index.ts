@@ -49,25 +49,51 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 registerMiniapp(async (session) => {
+  // Diagnostics for the real-hardware button trigger: log what this device
+  // actually reports, since different glasses models wire input differently.
+  console.log("[snaptrack] session ready, capabilities:", JSON.stringify(session.capabilities))
+
   function showText(text: string) {
+    console.log("[snaptrack] display:", text.replace(/\n/g, " / "))
     const d = session.capabilities?.display
-    void session.display.render([
-      {
-        type: "text",
-        id: "status",
-        box: {x: 0, y: 0, w: d?.width ?? 576, h: d?.height ?? 288},
-        text,
-      },
-    ])
+    session.display
+      .render([
+        {
+          type: "text",
+          id: "status",
+          box: {x: 0, y: 0, w: d?.width ?? 576, h: d?.height ?? 288},
+          text,
+        },
+      ])
+      .catch((e) => console.error("[snaptrack] display.render failed:", e))
   }
 
+  // Multiple presses/taps in quick succession would otherwise spawn
+  // overlapping captures that race each other on the display - ignore new
+  // triggers until the current one finishes.
+  let busy = false
+
   async function captureAndLog() {
+    if (busy) {
+      console.log("[snaptrack] capture already in progress, ignoring trigger")
+      return
+    }
+    busy = true
+    try {
+      await runCapture()
+    } finally {
+      busy = false
+    }
+  }
+
+  async function runCapture() {
     showText("Snapping photo...")
 
     let photo: {photoUrl: string; mimeType?: string}
     try {
       photo = await session.camera.takePhoto({size: "medium"})
-    } catch {
+    } catch (e) {
+      console.error("[snaptrack] takePhoto failed:", e)
       showText("Camera failed - try again")
       return
     }
@@ -126,6 +152,7 @@ registerMiniapp(async (session) => {
         }),
       })
     } catch (e) {
+      console.error("[snaptrack] upload/analyze failed:", e)
       const timedOut = e instanceof Error && e.name === "AbortError"
       showText(timedOut ? "Timed out - check connection\nand try again" : "Something went wrong")
     } finally {
@@ -138,8 +165,18 @@ registerMiniapp(async (session) => {
     return
   }
 
-  showText("Press the button\nto snap a meal")
-  session.input.onButtonPress(() => {
+  showText("Press the button\nor tap the touchpad\nto snap a meal")
+
+  session.input.onButtonPress((press) => {
+    console.log("[snaptrack] button press:", JSON.stringify(press))
+    void captureAndLog()
+  })
+
+  // Fallback trigger: some glasses route their physical control through
+  // touch gestures rather than a generic button-press event. Wiring both
+  // means whichever this hardware actually emits, capture still fires.
+  session.input.onTouch((gesture) => {
+    console.log("[snaptrack] touch gesture:", JSON.stringify(gesture))
     void captureAndLog()
   })
 })

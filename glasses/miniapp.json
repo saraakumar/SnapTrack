@@ -12,7 +12,9 @@
     "background": "background/index.js",
     "ui": "ui/index.html"
   },
-  "permissions": [],
+  "permissions": [
+    {"type": "CAMERA"}
+  ],
   "hardwareRequirements": [
     {"type": "CAMERA", "level": "REQUIRED", "description": "Captures the meal photo to analyze"},
     {"type": "DISPLAY", "level": "REQUIRED", "description": "Shows calories and macros on the HUD"}
