@@ -11,7 +11,8 @@ import secrets
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, render_template_string
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for, render_template_string, g, has_request_context
+from werkzeug.security import generate_password_hash, check_password_hash
 from google import genai
 from google.genai import types
 from PIL import Image
@@ -95,6 +96,30 @@ def init_db():
             )
         ''')
 
+        db.execute(f'''
+            CREATE TABLE IF NOT EXISTS users (
+                id {id_col},
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                api_token TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL
+            )
+        ''')
+
+        # Per-user data: nullable so this ALTER is safe on databases that
+        # already have rows (SQLite and Postgres both support adding a
+        # nullable column to a non-empty table without a rewrite/lock risk).
+        # Orphaned (NULL) rows get claimed by the first account ever created
+        # - see claim_orphaned_data() - so existing single-user deployments
+        # (like tonight's) keep their history once you sign up.
+        for table in ('meals', 'analysis_requests', 'corrections'):
+            if IS_POSTGRES:
+                db.execute(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS user_id INTEGER')
+            else:
+                cols = [r[1] for r in db.execute(f'PRAGMA table_info({table})').fetchall()]
+                if 'user_id' not in cols:
+                    db.execute(f'ALTER TABLE {table} ADD COLUMN user_id INTEGER')
+
 
 init_db()
 
@@ -109,10 +134,24 @@ app.secret_key = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 # humans get a login page, machine clients send it as an X-App-Key header
 APP_PASSWORD = os.environ.get('APP_PASSWORD')
 
-LOGIN_PAGE = """<!DOCTYPE html>
+# ---------- Auth: site-wide beta gate + per-user accounts ----------
+#
+# Two independent layers. APP_PASSWORD is a single shared gate protecting
+# the whole deployment (today's invite-only rollout) - unset it later and
+# the app is immediately open multi-user with zero further code changes.
+# Underneath that, real accounts give each person their own data: an
+# email+password login for the web UI, and a per-user api_token for machine
+# clients (the Mentra glasses) in place of the single shared X-App-Key.
+#
+# Before any account exists, data lives "unowned" (user_id IS NULL) under
+# the site-wide gate alone - this is how tonight's single-user demo already
+# works. The FIRST account ever created automatically claims all of it, so
+# signing up doesn't lose any history (see _create_user).
+
+AUTH_PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SnapTrack - Sign in</title>
+<title>SnapTrack - {{ title }}</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
 body { font-family: 'Nunito', sans-serif; background: #edf5ec; color: #16302a;
@@ -123,14 +162,100 @@ p { color: #5f7268; font-size: 0.9em; margin-bottom: 20px; }
 input { width: 100%; padding: 14px; border: 1px solid #dde8dd; border-radius: 12px; font-size: 1em; margin-bottom: 12px; font-family: inherit; }
 button { width: 100%; padding: 14px; border: none; border-radius: 12px; background: #6D9773; color: #fff; font-weight: 700; font-size: 1em; cursor: pointer; font-family: inherit; }
 .err { color: #d94f3d; font-size: 0.9em; margin-bottom: 12px; }
+.switch { margin-top: 16px; font-size: 0.85em; }
+.switch a { color: #6D9773; font-weight: 700; text-decoration: none; }
 </style></head><body>
 <form method="post">
   <h1>SnapTrack<span>.</span></h1>
-  <p>Enter the access code to continue</p>
+  <p>{{ subtitle }}</p>
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  {% if gate %}
   <input type="password" name="password" placeholder="Access code" autofocus>
-  <button type="submit">Sign in</button>
+  {% else %}
+  <input type="email" name="email" placeholder="Email" autofocus>
+  <input type="password" name="password" placeholder="Password" autocomplete="{{ 'new-password' if signup else 'current-password' }}">
+  {% endif %}
+  <button type="submit">{{ button }}</button>
+  {% if not gate %}
+  <div class="switch">
+    {% if signup %}Already have an account? <a href="{{ url_for('login') }}">Sign in</a>
+    {% else %}New here? <a href="{{ url_for('signup') }}">Create an account</a>{% endif %}
+  </div>
+  {% endif %}
 </form></body></html>"""
+
+ACCOUNT_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SnapTrack - Account</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+body { font-family: 'Nunito', sans-serif; background: #edf5ec; color: #16302a;
+       min-height: 100vh; padding: 24px 20px; }
+.card { background: #fff; border: 1px solid #dde8dd; border-radius: 20px; padding: 28px; width: 100%; max-width: 440px; margin: 0 auto 16px; }
+h1 { font-size: 1.3em; margin-bottom: 4px; }
+h2 { font-size: 1em; margin-bottom: 8px; }
+p { color: #5f7268; font-size: 0.9em; line-height: 1.5; }
+code { display: block; background: #edf5ec; border-radius: 10px; padding: 12px; font-size: 0.85em;
+       word-break: break-all; margin: 10px 0; user-select: all; }
+a.back { color: #6D9773; font-weight: 700; text-decoration: none; font-size: 0.9em; }
+button.logout { background: none; border: 1px solid #d94f3d; color: #d94f3d; border-radius: 10px;
+       padding: 10px 16px; font-weight: 700; font-size: 0.85em; cursor: pointer; font-family: inherit; }
+</style></head><body>
+<div class="card">
+  <h1>Your account</h1>
+  <p>{{ email }}</p>
+  <form method="post" action="{{ url_for('logout') }}" style="margin-top: 12px;">
+    <button class="logout" type="submit">Sign out</button>
+  </form>
+</div>
+<div class="card">
+  <h2>API token</h2>
+  <p>Use this in the Mentra glasses app's <code>glasses/.env</code>
+  (<code>MENTRA_PUBLIC_APP_KEY</code>) so captures log to your account instead of a shared password.</p>
+  <code>{{ api_token }}</code>
+</div>
+<div class="card"><a class="back" href="{{ url_for('index') }}">&larr; Back to SnapTrack</a></div>
+</body></html>"""
+
+
+def _create_user(email, password):
+    """Create an account. If this is the very first account ever, it
+    automatically claims all pre-existing unowned (user_id IS NULL) data -
+    so an existing single-user deployment's history survives signing up."""
+    with get_db() as db:
+        is_first = db.execute('SELECT COUNT(*) AS n FROM users').fetchone()['n'] == 0
+        sql = ('INSERT INTO users (email, password_hash, api_token, created_at) '
+               'VALUES (?, ?, ?, ?)')
+        params = (email.strip().lower(), generate_password_hash(password),
+                  secrets.token_hex(24), datetime.now().isoformat(timespec='seconds'))
+        if IS_POSTGRES:
+            user_id = db.execute(q(sql + ' RETURNING id'), params).fetchone()['id']
+        else:
+            user_id = db.execute(sql, params).lastrowid
+
+        if is_first:
+            for table in ('meals', 'analysis_requests', 'corrections'):
+                db.execute(q(f'UPDATE {table} SET user_id = ? WHERE user_id IS NULL'), (user_id,))
+            # Settings aren't user-scoped by a column - keys are namespaced
+            # as "anon:calorie_goal" before any account exists (see
+            # _settings_scope); re-key those to this new user on claim.
+            for key in ('calorie_goal', 'protein_goal'):
+                db.execute(q('UPDATE settings SET key = ? WHERE key = ?'),
+                           (f'u{user_id}:{key}', f'anon:{key}'))
+    return user_id
+
+
+def _find_user_by_email(email):
+    with get_db() as db:
+        return db.execute(q('SELECT * FROM users WHERE email = ?'), (email.strip().lower(),)).fetchone()
+
+
+def _find_user_by_token(token):
+    if not token:
+        return None
+    with get_db() as db:
+        return db.execute(q('SELECT * FROM users WHERE api_token = ?'), (token,)).fetchone()
 
 
 # The Mentra glasses miniapp's WebView runs on a different origin than this
@@ -155,29 +280,94 @@ def add_cors_headers(response):
 
 @app.before_request
 def require_access():
-    if not APP_PASSWORD:
-        return  # local development, no gate
-    if request.endpoint in ('login', 'static'):
+    if request.endpoint in ('login', 'signup', 'static'):
         return
-    if session.get('authed'):
+    # A logged-in account holder always passes, whether or not they ever
+    # separately entered the site-wide code (e.g. they signed up directly).
+    if session.get('user_id'):
         return
-    if request.headers.get('X-App-Key') == APP_PASSWORD:
-        return
-    if request.path.startswith('/api/') or request.path == '/upload':
-        return jsonify({'error': 'Unauthorized'}), 401
-    return redirect(url_for('login'))
+    # Site-wide beta gate - independent of individual accounts.
+    if APP_PASSWORD and not session.get('authed') and request.headers.get('X-App-Key') != APP_PASSWORD:
+        # A per-user token also satisfies the gate, so an account holder
+        # never needs the shared code once they're set up.
+        if not _find_user_by_token(request.headers.get('X-App-Key')):
+            if request.path.startswith('/api/') or request.path == '/upload':
+                return jsonify({'error': 'Unauthorized'}), 401
+            return redirect(url_for('login'))
+
+
+@app.before_request
+def load_current_user():
+    """Resolve which account (if any) owns this request, once, into
+    g.user_id - routes read g.user_id directly rather than re-deriving it."""
+    user_id = session.get('user_id')
+    if user_id is None:
+        token_user = _find_user_by_token(request.headers.get('X-App-Key'))
+        user_id = token_user['id'] if token_user else None
+    g.user_id = user_id
+
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    error = None
+    if request.method == 'POST':
+        email = (request.form.get('email') or '').strip()
+        password = request.form.get('password') or ''
+        if not email or '@' not in email:
+            error = 'Enter a valid email'
+        elif len(password) < 8:
+            error = 'Password must be at least 8 characters'
+        elif _find_user_by_email(email):
+            error = 'An account with that email already exists'
+        else:
+            user_id = _create_user(email, password)
+            session['user_id'] = user_id
+            session.permanent = True
+            return redirect(url_for('index'))
+    return render_template_string(AUTH_PAGE, title='Sign up', subtitle='Create your account',
+                                   button='Sign up', signup=True, gate=False, error=error)
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
     if request.method == 'POST':
-        if secrets.compare_digest(request.form.get('password', ''), APP_PASSWORD or ''):
-            session['authed'] = True
-            session.permanent = True
-            return redirect(url_for('index'))
-        error = 'Wrong access code'
-    return render_template_string(LOGIN_PAGE, error=error)
+        # The gate form (just a password field) posts here too when
+        # APP_PASSWORD is set and no account system is in play yet for this
+        # visitor - distinguish by which fields are present.
+        if 'email' not in request.form and APP_PASSWORD:
+            if secrets.compare_digest(request.form.get('password', ''), APP_PASSWORD):
+                session['authed'] = True
+                session.permanent = True
+                return redirect(url_for('index'))
+            error = 'Wrong access code'
+        else:
+            user = _find_user_by_email(request.form.get('email') or '')
+            if user and check_password_hash(user['password_hash'], request.form.get('password') or ''):
+                session['user_id'] = user['id']
+                session.permanent = True
+                return redirect(url_for('index'))
+            error = 'Wrong email or password'
+    gate = APP_PASSWORD and not session.get('authed')
+    return render_template_string(
+        AUTH_PAGE, title='Sign in',
+        subtitle='Enter the access code to continue' if gate else 'Sign in to your account',
+        button='Sign in', signup=False, gate=gate, error=error)
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.pop('user_id', None)
+    return redirect(url_for('index'))
+
+
+@app.route('/account')
+def account():
+    if not g.user_id:
+        return redirect(url_for('login'))
+    with get_db() as db:
+        user = db.execute(q('SELECT * FROM users WHERE id = ?'), (g.user_id,)).fetchone()
+    return render_template_string(ACCOUNT_PAGE, email=user['email'], api_token=user['api_token'])
 
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 # 25s hard timeout per API call so a stuck request can't hang the app;
@@ -276,7 +466,35 @@ def _is_rate_limit(error):
     return '429' in text or 'RESOURCE_EXHAUSTED' in text
 
 
-_correction_hint_cache = {'key': None, 'hints': None}
+def _current_user_id():
+    """g.user_id outside a request (e.g. eval/run_eval.py calling
+    analyze_food() directly, with no Flask request in flight) falls back to
+    the anonymous/pre-account scope rather than raising."""
+    if not has_request_context():
+        return None
+    return g.get('user_id')
+
+
+def _user_clause():
+    """SQL fragment + params scoping a query to the current user - IS NULL
+    (the pre-account "anonymous" owner) when no account is signed in, since
+    Postgres doesn't allow `col IS %s` bound to NULL as a parameter the way
+    `col = %s` works for a real id."""
+    user_id = _current_user_id()
+    if user_id is not None:
+        return 'user_id = ?', (user_id,)
+    return 'user_id IS NULL', ()
+
+
+def _settings_scope():
+    """Namespace prefix for the settings table's key column, since it has
+    no user_id FK of its own - 'u42:calorie_goal' vs 'anon:calorie_goal'."""
+    user_id = _current_user_id()
+    return f'u{user_id}' if user_id is not None else 'anon'
+
+
+# Per-user: {user_id (or None for anon): {'key': ..., 'hints': ...}}
+_correction_hint_cache = {}
 
 # A one-off edit doesn't mean much; the same correction happening twice does
 MIN_CORRECTION_PATTERN_COUNT = 2
@@ -286,12 +504,17 @@ def _correction_hints():
     """Foods the model has misidentified the same way more than once, mapped
     to what the user corrected them to. Rebuilt whenever the corrections
     table grows, otherwise served from cache."""
+    user_id = _current_user_id()
+    clause, params = _user_clause()
     with get_db() as db:
-        rows = db.execute('SELECT original_description, corrected_description FROM corrections').fetchall()
+        rows = db.execute(
+            q(f'SELECT original_description, corrected_description FROM corrections WHERE {clause}'),
+            params).fetchall()
 
+    cached = _correction_hint_cache.get(user_id, {})
     cache_key = len(rows)
-    if _correction_hint_cache['key'] == cache_key:
-        return _correction_hint_cache['hints']
+    if cached.get('key') == cache_key:
+        return cached['hints']
 
     groups = {}
     for r in rows:
@@ -308,8 +531,7 @@ def _correction_hints():
         most_common = max(counts, key=counts.get)
         hints[key] = {'corrected': most_common, 'count': len(corrected_list)}
 
-    _correction_hint_cache['key'] = cache_key
-    _correction_hint_cache['hints'] = hints
+    _correction_hint_cache[user_id] = {'key': cache_key, 'hints': hints}
     return hints
 
 
@@ -334,9 +556,9 @@ def _record_correction(original, corrected):
     try:
         with get_db() as db:
             db.execute(q(
-                'INSERT INTO corrections (created_at, original_description, corrected_description) '
-                'VALUES (?, ?, ?)'),
-                (datetime.now().isoformat(timespec='seconds'), original, corrected))
+                'INSERT INTO corrections (created_at, original_description, corrected_description, user_id) '
+                'VALUES (?, ?, ?, ?)'),
+                (datetime.now().isoformat(timespec='seconds'), original, corrected, g.user_id))
     except Exception as e:
         app.logger.warning(f"Failed to record correction: {e}")
 
@@ -458,8 +680,8 @@ def _log_analysis_request(latency_ms, had_correction, result=None, error=None):
         with get_db() as db:
             db.execute(q(
                 'INSERT INTO analysis_requests '
-                '(created_at, model, retried, had_correction, latency_ms, item_count, grounded_count, min_confidence, error) '
-                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
+                '(created_at, model, retried, had_correction, latency_ms, item_count, grounded_count, min_confidence, error, user_id) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
                 (datetime.now().isoformat(timespec='seconds'),
                  result.get('model') if result else None,
                  int(bool(result.get('retried'))) if result else 0,
@@ -468,7 +690,8 @@ def _log_analysis_request(latency_ms, had_correction, result=None, error=None):
                  len(items),
                  sum(1 for i in items if i.get('type') == 'usda'),
                  _min_confidence(result) if items else None,
-                 error))
+                 error,
+                 g.user_id))
     except Exception as e:
         app.logger.warning(f"Failed to log analysis request: {e}")
 
@@ -646,7 +869,8 @@ def _generate_text(prompt):
     raise last_error or RuntimeError('No model available')
 
 
-_coach_cache = {'key': None, 'text': None}
+# Per-user: {user_id (or None for anon): {'key': ..., 'text': ...}}
+_coach_cache = {}
 
 
 def _goals_line():
@@ -668,17 +892,19 @@ def coach():
         return jsonify({'message': None})
 
     today = datetime.now().strftime('%Y-%m-%d')
+    clause, params = _user_clause()
     with get_db() as db:
         rows = db.execute(
-            q('SELECT * FROM meals WHERE created_at LIKE ? ORDER BY created_at'),
-            (today + '%',)).fetchall()
+            q(f'SELECT * FROM meals WHERE {clause} AND created_at LIKE ? ORDER BY created_at'),
+            params + (today + '%',)).fetchall()
 
     if not rows:
         return jsonify({'message': None})
 
     cache_key = (today, len(rows), rows[-1]['id'], str(_get_goals()))
-    if _coach_cache['key'] == cache_key:
-        return jsonify({'message': _coach_cache['text']})
+    cached = _coach_cache.get(g.user_id, {})
+    if cached.get('key') == cache_key:
+        return jsonify({'message': cached['text']})
 
     meal_lines = []
     for row in rows:
@@ -710,15 +936,15 @@ Be warm but direct. No greetings, no emoji, no generic platitudes like "keep it 
 
     try:
         message = _generate_text(prompt)
-        _coach_cache['key'] = cache_key
-        _coach_cache['text'] = message
+        _coach_cache[g.user_id] = {'key': cache_key, 'text': message}
         return jsonify({'message': message})
     except Exception as e:
         app.logger.warning(f"Coach generation failed: {e}")
         return jsonify({'message': None})
 
 
-_insight_cache = {'key': None, 'text': None}
+# Per-user: {user_id (or None for anon): {'key': ..., 'text': ...}}
+_insight_cache = {}
 
 
 @app.route('/api/insights/weekly')
@@ -728,18 +954,20 @@ def weekly_insight():
         return jsonify({'message': None})
 
     week_ago = (datetime.now() - timedelta(days=6)).strftime('%Y-%m-%d')
+    clause, params = _user_clause()
     with get_db() as db:
         rows = db.execute(
-            q('SELECT * FROM meals WHERE created_at >= ? ORDER BY created_at'),
-            (week_ago,)).fetchall()
+            q(f'SELECT * FROM meals WHERE {clause} AND created_at >= ? ORDER BY created_at'),
+            params + (week_ago,)).fetchall()
 
     # Not enough data for trends to mean anything yet
     if len(rows) < 3:
         return jsonify({'message': None})
 
     cache_key = (datetime.now().strftime('%Y-%m-%d'), len(rows), rows[-1]['id'], str(_get_goals()))
-    if _insight_cache['key'] == cache_key:
-        return jsonify({'message': _insight_cache['text']})
+    cached = _insight_cache.get(g.user_id, {})
+    if cached.get('key') == cache_key:
+        return jsonify({'message': cached['text']})
 
     # One line per day: date, meal count, kcal, macros
     days = {}
@@ -771,8 +999,7 @@ no generic platitudes like "keep it up", no lecturing about health."""
 
     try:
         message = _generate_text(prompt)
-        _insight_cache['key'] = cache_key
-        _insight_cache['text'] = message
+        _insight_cache[g.user_id] = {'key': cache_key, 'text': message}
         return jsonify({'message': message})
     except Exception as e:
         app.logger.warning(f"Weekly insight generation failed: {e}")
@@ -795,9 +1022,11 @@ def pipeline_stats():
     """Aggregate recent /upload requests: latency, errors, retries, USDA
     grounding rate, and correction rate - the health of the analysis
     pipeline itself, not of any one meal."""
+    clause, params = _user_clause()
     with get_db() as db:
         rows = db.execute(
-            'SELECT * FROM analysis_requests ORDER BY created_at DESC LIMIT 500').fetchall()
+            q(f'SELECT * FROM analysis_requests WHERE {clause} ORDER BY created_at DESC LIMIT 500'),
+            params).fetchall()
 
     if not rows:
         return jsonify({'count': 0})
@@ -815,7 +1044,8 @@ def pipeline_stats():
 
     with get_db() as db:
         correction_rows = db.execute(
-            'SELECT original_description, corrected_description FROM corrections').fetchall()
+            q(f'SELECT original_description, corrected_description FROM corrections WHERE {clause}'),
+            params).fetchall()
     pattern_counts, pattern_fix = {}, {}
     for r in correction_rows:
         key = r['original_description'].strip().lower()
@@ -854,12 +1084,12 @@ def _insert_meal(items, totals, summary='', thumbnail=None, meal_type=None):
     if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
         meal_type = None
     created_at = datetime.now().isoformat(timespec='seconds')
-    sql = ('INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type) '
-           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    sql = ('INSERT INTO meals (created_at, summary, items, calories, protein_g, carbs_g, fat_g, thumbnail, meal_type, user_id) '
+           'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     params = (created_at, summary, json.dumps(items),
               totals.get('calories'), totals.get('protein_g'),
               totals.get('carbs_g'), totals.get('fat_g'),
-              thumbnail, meal_type)
+              thumbnail, meal_type, g.user_id)
     with get_db() as db:
         if IS_POSTGRES:
             cur = db.execute(q(sql + ' RETURNING id'), params)
@@ -887,8 +1117,11 @@ def log_meal():
 @app.route('/api/meals', methods=['GET'])
 def list_meals():
     """Return logged meals, newest first"""
+    clause, params = _user_clause()
     with get_db() as db:
-        rows = db.execute('SELECT * FROM meals ORDER BY created_at DESC, id DESC LIMIT 200').fetchall()
+        rows = db.execute(
+            q(f'SELECT * FROM meals WHERE {clause} ORDER BY created_at DESC, id DESC LIMIT 200'),
+            params).fetchall()
     meals = []
     for row in rows:
         meal = dict(row)
@@ -899,8 +1132,11 @@ def list_meals():
 
 @app.route('/api/meals/<int:meal_id>', methods=['DELETE'])
 def delete_meal(meal_id):
+    # user_id in the WHERE clause (not just the id) is what stops one
+    # account from deleting another's meal by guessing/incrementing an id.
+    clause, params = _user_clause()
     with get_db() as db:
-        db.execute(q('DELETE FROM meals WHERE id = ?'), (meal_id,))
+        db.execute(q(f'DELETE FROM meals WHERE id = ? AND {clause}'), (meal_id,) + params)
     return jsonify({'success': True})
 
 
@@ -911,16 +1147,19 @@ def update_meal(meal_id):
     meal_type = data.get('meal_type')
     if meal_type not in ('Breakfast', 'Lunch', 'Dinner', 'Snack'):
         return jsonify({'error': 'Invalid meal_type'}), 400
+    clause, params = _user_clause()
     with get_db() as db:
-        db.execute(q('UPDATE meals SET meal_type = ? WHERE id = ?'), (meal_type, meal_id))
+        db.execute(q(f'UPDATE meals SET meal_type = ? WHERE id = ? AND {clause}'),
+                   (meal_type, meal_id) + params)
     return jsonify({'success': True})
 
 
 def _get_goals():
+    scope = _settings_scope()
     with get_db() as db:
         rows = db.execute(q("SELECT key, value FROM settings WHERE key IN (?, ?)"),
-                          ('calorie_goal', 'protein_goal')).fetchall()
-    goals = {row['key']: row['value'] for row in rows}
+                          (f'{scope}:calorie_goal', f'{scope}:protein_goal')).fetchall()
+    goals = {row['key'].split(':', 1)[1]: row['value'] for row in rows}
     return {
         'calorie_goal': _to_number(goals.get('calorie_goal')),
         'protein_goal': _to_number(goals.get('protein_goal')),
@@ -934,15 +1173,17 @@ def get_goals():
 
 def _set_goals(calorie_goal=None, protein_goal=None):
     """Shared by the /api/goals route and the chat assistant's set_goals tool"""
+    scope = _settings_scope()
     upsert = ('INSERT INTO settings (key, value) VALUES (?, ?) '
               'ON CONFLICT (key) DO UPDATE SET value = excluded.value')
     with get_db() as db:
         for key, raw in (('calorie_goal', calorie_goal), ('protein_goal', protein_goal)):
             value = _to_number(raw)
+            namespaced = f'{scope}:{key}'
             if value and value > 0:
-                db.execute(q(upsert), (key, str(value)))
+                db.execute(q(upsert), (namespaced, str(value)))
             else:
-                db.execute(q('DELETE FROM settings WHERE key = ?'), (key,))
+                db.execute(q('DELETE FROM settings WHERE key = ?'), (namespaced,))
     return _get_goals()
 
 
@@ -1015,8 +1256,11 @@ CHAT_TOOLS = [
 def _tool_get_daily_totals(days=7):
     days = max(1, min(int(days or 7), 30))
     since = (datetime.now() - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    clause, params = _user_clause()
     with get_db() as db:
-        rows = db.execute(q('SELECT * FROM meals WHERE created_at >= ? ORDER BY created_at'), (since,)).fetchall()
+        rows = db.execute(
+            q(f'SELECT * FROM meals WHERE {clause} AND created_at >= ? ORDER BY created_at'),
+            params + (since,)).fetchall()
     by_day = {}
     for r in rows:
         day = r['created_at'][:10]
@@ -1035,10 +1279,11 @@ def _tool_get_daily_totals(days=7):
 def _tool_get_meal_log(days=3):
     days = max(1, min(int(days or 3), 14))
     since = (datetime.now() - timedelta(days=days - 1)).strftime('%Y-%m-%d')
+    clause, params = _user_clause()
     with get_db() as db:
         rows = db.execute(
-            q('SELECT * FROM meals WHERE created_at >= ? ORDER BY created_at DESC LIMIT 60'),
-            (since,)).fetchall()
+            q(f'SELECT * FROM meals WHERE {clause} AND created_at >= ? ORDER BY created_at DESC LIMIT 60'),
+            params + (since,)).fetchall()
     meals = []
     for r in rows:
         items = json.loads(r['items'])
