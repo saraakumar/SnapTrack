@@ -4,3 +4,4 @@ psycopg[binary]>=3.2
 google-genai>=2.0
 Pillow>=12.0
 python-dotenv>=1.0
+requests>=2.32

@@ -33,15 +33,17 @@ export function App() {
     const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
 
     // Each stage gets its own try/catch with a distinct, step-labeled error
-    // message - "Load failed" from a raw fetch doesn't say WHICH fetch threw,
-    // and this app has already hit two different fetch failure modes
-    // (background JSContext fetch: 200 OK but empty body; CORS block: throws
-    // before even reaching a response) so pinning the exact step matters.
-    let photoUrl: string, mimeType: string | undefined
+    // message - "Load failed" from a raw fetch doesn't say WHICH fetch threw.
+    //
+    // Mentra's photo storage host doesn't send CORS headers permitting this
+    // WebView's origin, so the browser blocks a direct fetch there entirely
+    // (confirmed live: every attempt failed at this exact step). Instead of
+    // fetching the bytes ourselves, hand the URL to our own backend and let
+    // IT fetch server-side - not subject to browser CORS at all.
+    let photoUrl: string
     try {
       const photo = await mentra.request("takePhoto", {})
       photoUrl = photo.photoUrl
-      mimeType = photo.mimeType
     } catch (e) {
       setStatus(`[capture] ${String(e)}`)
       setBusy(false)
@@ -49,39 +51,13 @@ export function App() {
       return
     }
 
-    let blob: Blob
-    try {
-      setStatus("Fetching photo...")
-      const photoResponse = await fetch(photoUrl, {signal: controller.signal})
-      if (!photoResponse.ok) {
-        setStatus(`[photo-fetch] status ${photoResponse.status}`)
-        setBusy(false)
-        clearTimeout(timeout)
-        return
-      }
-      blob = await photoResponse.blob()
-      if (blob.size === 0) {
-        setStatus("[photo-fetch] got 0 bytes")
-        setBusy(false)
-        clearTimeout(timeout)
-        return
-      }
-    } catch (e) {
-      setStatus(`[photo-fetch] ${String(e)}`)
-      setBusy(false)
-      clearTimeout(timeout)
-      return
-    }
-
     let analysis: AnalysisResult
     try {
-      setStatus(`Analyzing (${Math.round(blob.size / 1024)}KB)...\nFirst request after idle can take ~1 min.`)
-      const formData = new FormData()
-      formData.append("file", blob, `meal.${mimeType?.split("/")[1] || "jpg"}`)
+      setStatus("Analyzing...\nFirst request after idle can take ~1 min.")
       const uploadResponse = await fetch(`${BACKEND_URL}/upload`, {
         method: "POST",
-        headers: {"X-App-Key": APP_KEY},
-        body: formData,
+        headers: {"X-App-Key": APP_KEY, "Content-Type": "application/json"},
+        body: JSON.stringify({photo_url: photoUrl}),
         signal: controller.signal,
       })
       analysis = await uploadResponse.json()

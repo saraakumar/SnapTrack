@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 import secrets
 
+import requests
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, render_template_string
 from google import genai
@@ -549,9 +550,13 @@ def api_status():
 def upload_file():
     """Analyze an uploaded food photo.
 
-    Accepts either multipart/form-data (the web/mobile UI) or a JSON body with
-    a base64 image (the Mentra glasses background script, whose on-device JS
-    runtime has fetch() but no FormData/Blob - see glasses/README.md).
+    Accepts multipart/form-data (the web/mobile UI), a JSON body with a
+    base64 image (older glasses path), or a JSON body with a photo_url (the
+    Mentra glasses UI WebView): Mentra's photo storage host doesn't send
+    CORS headers permitting the WebView's origin, so the browser blocks a
+    direct fetch there - this server fetches it instead, since server-to-
+    server requests aren't subject to browser CORS at all. See
+    glasses/README.md.
     """
     if client is None:
         return jsonify({'error': 'GEMINI_API_KEY is not configured on the server. '
@@ -564,14 +569,26 @@ def upload_file():
     # be trusted here - force=True parses the body as JSON anyway.
     if 'file' not in request.files:
         data = request.get_json(silent=True, force=True) or {}
+        photo_url = data.get('photo_url')
         image_b64 = data.get('image_base64')
-        if not image_b64:
-            return jsonify({'error': 'No image_base64 provided'}), 400
-        try:
-            image = Image.open(io.BytesIO(base64.b64decode(image_b64)))
-            image.load()
-        except Exception:
-            return jsonify({'error': 'Could not decode that image. Please try another photo.'}), 400
+        if photo_url:
+            try:
+                photo_response = requests.get(
+                    photo_url, timeout=20, headers={'User-Agent': 'SnapTrack/1.0'})
+                photo_response.raise_for_status()
+                image = Image.open(io.BytesIO(photo_response.content))
+                image.load()
+            except Exception as e:
+                app.logger.error(f"Failed to fetch photo_url: {e}")
+                return jsonify({'error': 'Could not fetch that photo URL. It may have expired.'}), 400
+        elif image_b64:
+            try:
+                image = Image.open(io.BytesIO(base64.b64decode(image_b64)))
+                image.load()
+            except Exception:
+                return jsonify({'error': 'Could not decode that image. Please try another photo.'}), 400
+        else:
+            return jsonify({'error': 'No image_base64 or photo_url provided'}), 400
         original_description = (data.get('original_description') or '').strip()
         corrected_description = (data.get('corrected_description') or '').strip()
         correction = corrected_description or (data.get('correction') or '').strip() or None
