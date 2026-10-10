@@ -132,6 +132,26 @@ button { width: 100%; padding: 14px; border: none; border-radius: 12px; backgrou
 </form></body></html>"""
 
 
+# The Mentra glasses miniapp's WebView runs on a different origin than this
+# app (unlike the normal web UI, which fetches itself), so its requests are
+# cross-origin and need CORS headers or the browser blocks them outright
+# (surfaces as a generic "TypeError: Load failed", no server-side signal at
+# all since the browser never lets the request through).
+@app.before_request
+def handle_cors_preflight():
+    # A preflight carries no auth and must never hit the access gate below.
+    if request.method == 'OPTIONS':
+        return '', 204
+
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-App-Key'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PATCH, DELETE, OPTIONS'
+    return response
+
+
 @app.before_request
 def require_access():
     if not APP_PASSWORD:

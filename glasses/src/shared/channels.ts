@@ -9,12 +9,21 @@
  * shapes at compile time so the two halves can't drift.
  */
 
+import type {Rpc} from "@mentra/miniapp/background"
+
 export interface Channels {
   // WebView → background
   "ping": {at: number}
 
   // background → WebView
   "pong": {at: number; roundtripMs: number}
+
+  // WebView -> background RPC: capture a photo via the glasses camera
+  // (hardware control must stay in background) and return its download URL
+  // for the WebView's own real fetch/Blob-capable network stack to fetch -
+  // the background JSContext's fetch() can't reliably read large
+  // cross-origin binary bodies on this hardware (see glasses/README.md).
+  "takePhoto": Rpc<Record<string, never>, {photoUrl: string; mimeType: string}>
 }
 
 declare global {

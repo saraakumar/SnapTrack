@@ -10,24 +10,7 @@
 
 import {registerMiniapp} from "@mentra/miniapp/background"
 import "../shared/channels"
-
-// Point this at your deployed SnapTrack backend. X-App-Key authenticates
-// machine clients the same way the mobile web app's fetches do (see
-// app.py's require_access before_request hook).
-//
-// APP_KEY comes from a MENTRA_PUBLIC_* env var, inlined into the bundle at
-// build time (see build.ts) - copy .env.example to .env and fill in the
-// real value there. .env is gitignored; never hardcode the real password
-// here, since this repo is public. This is still a hobby-project tradeoff
-// (the built bundle itself contains the plaintext key) - if you ever
-// distribute this miniapp beyond your own glasses, put APP_KEY behind a
-// real per-user login instead.
-const BACKEND_URL = "https://snaptrack-td9s.onrender.com"
-const APP_KEY = process.env.MENTRA_PUBLIC_APP_KEY ?? ""
-
-// Render's free tier spins down when idle (~50s cold start) - give the
-// upload enough room to survive that plus the Gemini analysis call itself.
-const UPLOAD_TIMEOUT_MS = 75_000
+import {APP_KEY, BACKEND_URL, UPLOAD_TIMEOUT_MS} from "../shared/config"
 
 function mealTypeForNow(): string {
   const h = new Date().getHours()
@@ -91,27 +74,44 @@ registerMiniapp(async (session) => {
 
     let photo: {photoUrl: string; mimeType?: string}
     try {
-      photo = await session.camera.takePhoto({size: "medium"})
+      // "low" size as a first test: if a smaller binary body gets through
+      // where "medium" didn't, that confirms a payload-size limit in this
+      // runtime's fetch rather than a per-request auth/CORS failure.
+      photo = await session.camera.takePhoto({size: "low"})
+      console.log("[snaptrack] photo captured, photoUrl:", photo.photoUrl, "mimeType:", photo.mimeType)
     } catch (e) {
       console.error("[snaptrack] takePhoto failed:", e)
       showText("Camera failed - try again")
       return
     }
 
-    showText("Analyzing...\n(first request after idle can take ~1 min)")
-
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
 
     try {
-      const photoResponse = await fetch(photo.photoUrl, {signal: controller.signal})
+      // No AbortSignal on this GET: testing whether combining signal with a
+      // large cross-origin binary body read is what's zeroing out the bytes
+      // in this runtime's fetch polyfill (headers parse fine either way).
+      const photoResponse = await fetch(photo.photoUrl)
       const bytes = new Uint8Array(await photoResponse.arrayBuffer())
+
+      if (!photoResponse.ok || bytes.length === 0) {
+        // Shown on the HUD (not just console.log) since the dev log pipe
+        // has been silently dropping some diagnostic lines over BLE/Wi-Fi.
+        const len = photoResponse.headers.get("content-length") ?? "?"
+        const type = photoResponse.headers.get("content-type") ?? "?"
+        showText(`Photo transfer failed\nstatus ${photoResponse.status}, got ${bytes.length}b\nheader len=${len} type=${type}`)
+        return
+      }
+
+      const b64 = toBase64(bytes)
+      showText(`Analyzing (${bytes.length}b -> ${b64.length}b64)...\n(first request after idle can take ~1 min)`)
 
       const analysis = await fetch(`${BACKEND_URL}/upload`, {
         method: "POST",
         headers: {"X-App-Key": APP_KEY, "Content-Type": "application/json"},
         body: JSON.stringify({
-          image_base64: toBase64(bytes),
+          image_base64: b64,
           mime_type: photo.mimeType || "image/jpeg",
         }),
         signal: controller.signal,
@@ -178,5 +178,25 @@ registerMiniapp(async (session) => {
   session.input.onTouch((gesture) => {
     console.log("[snaptrack] touch gesture:", JSON.stringify(gesture))
     void captureAndLog()
+  })
+
+  // RPC for the UI WebView: camera control is hardware-gated and must run
+  // here in background, but the WebView's real browser fetch/Blob can read
+  // the resulting photoUrl's binary body where this JSContext's fetch
+  // cannot (see captureAndLog's photoResponse handling above). The UI calls
+  // this, then does its own fetch+upload+display using the returned URL.
+  //
+  // `session.ui` isn't generic over our Channels type the way the UI-side
+  // `mentra` global is (MiniappSession takes no type parameter), so `handle`
+  // can't infer "takePhoto" as a valid RPC channel here - cast around it;
+  // the UI side (mentra.request) keeps full type safety via channels.ts.
+  type TakePhotoHandle = (
+    channel: "takePhoto",
+    handler: () => Promise<{photoUrl: string; mimeType: string}>,
+  ) => void
+  ;(session.ui.handle as unknown as TakePhotoHandle)("takePhoto", async () => {
+    console.log("[snaptrack] UI requested takePhoto")
+    const photo = await session.camera.takePhoto({size: "medium"})
+    return {photoUrl: photo.photoUrl, mimeType: photo.mimeType}
   })
 })
